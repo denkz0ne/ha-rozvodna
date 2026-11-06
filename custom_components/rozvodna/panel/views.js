@@ -54,44 +54,44 @@ export function history(panel) {
     ${button("history-next", t.next, records.length === 50 ? "" : "disabled")}</section>`;
 }
 
-const variants = ["area", "label_add", "label_remove", "prefix", "suffix", "replace", "regex", "number", "reset"];
+const variants = ["area", "label_add", "label_remove", "hide", "unhide", "disable", "enable"];
 export function bulk(panel) {
   const { t, bulkOperation: op, bulkResult: result, bulkValues: values } = panel;
   const select = op === "area" || op.startsWith("label_");
   const choices = select ? (op === "area" ? panel.options.area_id : panel.options.labels) : null;
   const form = select ? `<label>${t[op === "area" ? "area_id" : "labels"]}<select data-bulk="choice">${option("", t.none)}
     ${[...choices].map(([id, name]) => option(id, name, id === values?.choice)).join("")}</select></label>` :
-    op === "reset" ? "" : `<label>${t[op === "number" ? "start" : "text"]}<input data-bulk="input"
-    type="${op === "number" ? "number" : "text"}" value="${esc(values?.input ?? (op === "number" ? "1" : ""))}"></label>`;
-  const replacement = ["replace", "regex"].includes(op) ?
-    `<label>${t.replacement}<input data-bulk="replacement" value="${esc(values?.replacement)}"></label>` : "";
+    "";
   const rows = result?.map(({ row, field, before, after }) => `<tr><td>${esc(row.title)}</td>
     <td>${esc(panel.describe(field, before))}</td><td>${esc(panel.describe(field, after))}</td></tr>`);
+  const preview = rows ? rows.length ? button("apply-bulk", t.apply) + table(t, ["object", "original", "proposed"], rows) :
+    `<p>${t.no_bulk_changes}</p>` : "";
+  const skipped = rows && panel.bulkSkipped ? `<p role="status">${esc(t.bulk_skipped(panel.bulkSkipped))}</p>` : "";
   return `<section><h2>${t.bulk} (${panel.selected.size})</h2>${button("registry", t.back)}
     <div class="toolbar"><select data-input="bulk-operation" aria-label="${t.bulk}">
     ${variants.map((name) => option(name, t[name], name === op)).join("")}</select>
-    ${form}${replacement}${button("preview", t.preview)}</div>
-    ${rows ? button("apply-bulk", t.apply, rows.length ? "" : "disabled") + table(t, ["object", "original", "proposed"], rows) : ""}
+    ${form}${button("preview", t.preview)}</div>
+    ${skipped}${preview}
     </section>`;
 }
 
 export function preview(panel) {
   const get = (name) => panel.body.querySelector(`[data-bulk="${name}"]`)?.value ?? "";
-  const [input, replacement, choice] = ["input", "replacement", "choice"].map(get);
+  const choice = get("choice");
   const op = panel.bulkOperation;
-  panel.bulkValues = { input, replacement, choice };
+  panel.bulkValues = { choice };
   panel.bulkResult = null;
-  if ((["prefix", "suffix", "replace", "regex", "number"].includes(op) && !input) ||
-      (op.startsWith("label_") && !choice)) return "required";
-  if (op === "number" && !Number.isSafeInteger(Number(input))) return "invalid_value";
+  panel.bulkSkipped = 0;
+  if (op.startsWith("label_") && !choice) return "required";
   const rows = [...panel.selected].map((id) => panel.objects.get(id)).filter(Boolean);
   try {
-    const result = bulkPreview(rows, op, (row, field) => panel.value(row, field), input, replacement, choice);
-    const error = result.map(({ row, field, after }) => validate(row, field, after)).find(Boolean);
+    const result = bulkPreview(rows, op, (row, field) => panel.value(row, field), choice);
+    const error = result.changes.map(({ row, field, after }) => validate(row, field, after)).find(Boolean);
     if (error) return error;
-    panel.bulkResult = result;
+    panel.bulkResult = result.changes;
+    panel.bulkSkipped = result.skipped;
   } catch {
-    return "invalid_regex";
+    return "unsupported_field";
   }
   return null;
 }
