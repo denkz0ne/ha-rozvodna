@@ -82,7 +82,7 @@ tr.nested[aria-selected=true] { background: var(--selected-surface); }
 tr.nested td { height: 40px; }
 tr.nested .object { padding-inline-start: 26px; }
 td.object { min-width: 218px; max-width: 340px; }
-td.object .object-content { display: flex; align-items: center; gap: 2px; width: 100%; min-width: 0; }
+td.object .object-content { display: flex; align-items: center; gap: 2px; width: 100%; min-width: 0; position: relative; }
 td.object .object-name { width: auto; min-width: 0; flex: 1; min-height: 34px; justify-content: flex-start;
   text-align: start; border-color: transparent; background: transparent; padding: 2px 5px; border-radius: var(--control-radius); }
 td.object .object-name:hover:not(:disabled) { border-color: var(--outline); background: transparent; }
@@ -94,7 +94,7 @@ td.object .object-icon:hover:not(:disabled) { background: var(--row-hover); }
 .object-text span, .object-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .object-meta { margin-top: 2px; color: var(--muted); font-size: var(--ha-font-size-s, 12px); }
 .entity-status { display: inline-flex; align-items: center; justify-content: center; width: 22px; min-width: 22px;
-  color: var(--muted); cursor: help; }
+  position: absolute; inset-inline-start: -22px; top: 50%; transform: translateY(-50%); color: var(--muted); cursor: help; }
 .entity-status ha-icon { --mdc-icon-size: 18px; }
 .entity-status.status-unavailable { color: var(--error-color, #db4437); }
 .entity-status.status-disabled, .entity-status.status-hidden { color: var(--warning-color, #e88713); }
