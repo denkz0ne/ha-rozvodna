@@ -4,22 +4,77 @@
 <rozvodna-panel></rozvodna-panel>
 <script type="module" src="/custom_components/rozvodna/panel/panel.js"></script>
 <script type="module">
+class TestHaSwitch extends HTMLElement {
+  connectedCallback() {
+    this.setAttribute("role", "switch");
+    this.tabIndex = 0;
+    this.setAttribute("aria-checked", String(this.checked));
+    this.addEventListener("click", () => this.toggle());
+    this.addEventListener("keydown", (event) => {
+      if (event.key === " " || event.key === "Enter") {
+        event.preventDefault();
+        this.toggle();
+      }
+    });
+  }
+  get checked() { return this.hasAttribute("checked"); }
+  get disabled() { return this.hasAttribute("disabled"); }
+  set checked(value) {
+    this.toggleAttribute("checked", Boolean(value));
+    this.setAttribute("aria-checked", String(Boolean(value)));
+  }
+  toggle() {
+    if (this.hasAttribute("disabled")) return;
+    this.checked = !this.checked;
+    this.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  }
+}
+customElements.define("ha-switch", TestHaSwitch);
+customElements.define("ha-tooltip", class extends HTMLElement {
+  connectedCallback() { this.hidden = true; }
+});
 const device = (id, title, integration) => ({
   kind: "device", id, title, original_name: title, integration, config_title: title, inherited_labels: [],
   values: { name: null, area_id: null, labels: [] },
 });
-const entity = (id, title, integration, device_id) => ({
+const entity = (id, title, integration, device_id, options = {}) => ({
   kind: "entity", id, title, original_name: title, integration, device_id, inherited_labels: [],
-  values: { name: null, entity_id: "sensor." + id, area_id: null, labels: [], icon: null, hidden_by: null, disabled_by: null },
+  readonly: options.readonly ?? false,
+  values: { name: null, entity_id: "sensor." + id, area_id: null, labels: [], icon: null,
+    hidden_by: options.hidden_by ?? null, disabled_by: options.disabled_by ?? null },
 });
+const params = new URLSearchParams(location.search);
 const data = {
   devices: [device("z", "ZB50 Predsieň", "zha"), device("e", "ESP80 Meteo", "esphome")],
   entities: [entity("light", "Svetlo", "zha", "z"), entity("link", "Kvalita spojenia", "zha", "z"),
     entity("temp", "Teplota", "esphome", "e"), entity("orphan", "Počasie", "template", null)],
   areas: [{ id: "hall", name: "Predsieň", icon: "mdi:door" }],
-  labels: [{ id: "test", name: "Testovací", icon: "mdi:tag", color: "#00bcd4" }],
+  labels: [
+    { id: "auto", name: "Automatika", icon: "mdi:tag" },
+    { id: "test", name: "Testovací", icon: "mdi:tag", color: "#00bcd4" },
+  ],
 };
-const params = new URLSearchParams(location.search);
+const states = {
+  "sensor.light": { state: "on", attributes: {} },
+  "sensor.link": { state: "unavailable", attributes: {} },
+  "sensor.temp": { state: "unknown", attributes: {} },
+  "sensor.orphan": { state: "unknown", attributes: { restored: true } },
+};
+window.moreInfoEvents = [];
+document.addEventListener("hass-more-info", (event) => window.moreInfoEvents.push(event.detail.entityId));
+if (params.has("features")) {
+  data.devices.push(device("living", "Zariadenia", "testspace"));
+  data.entities.push(
+    entity("disabled", "Zakázaná", "zha", "z", { disabled_by: "user" }),
+    entity("hidden", "Skrytá", "zha", "z", { hidden_by: "user" }),
+    entity("managed_hidden", "Skrytá integráciou", "zha", "z", { hidden_by: "integration" }),
+    entity("readonly", "Neovládateľná", "zha", "z", { readonly: true }),
+    entity("living_light", "ObývaČka svetlo", "testspace", "living"),
+  );
+  for (const id of ["disabled", "hidden", "managed_hidden", "readonly", "living_light"]) {
+    states[`sensor.${id}`] = { state: "on", attributes: {} };
+  }
+}
 if (params.has("large")) {
   for (let i = 0; i < 600; i++) {
     data.devices.push(device("d" + i, "Zariadenie " + i, "zha"));
@@ -39,6 +94,8 @@ const persist = () => sessionStorage.setItem("test-state", JSON.stringify(state)
 const opKey = (op) => [op.kind, op.object_id, op.field].join("/");
 document.querySelector("rozvodna-panel").hass = {
   language: "sk", user: { is_admin: !params.has("nonadmin"), id: "test-user" },
+  states,
+  localize(key) { return key === "component.testspace.title" ? "ObývaČKA" : undefined; },
   async callWS(msg) {
     window.requests.push(msg);
     let result;
