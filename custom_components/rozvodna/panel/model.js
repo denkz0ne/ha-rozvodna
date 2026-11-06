@@ -103,25 +103,28 @@ export function nextCell(rows, index, field, horizontal, reverse) {
   return null;
 }
 
-export function bulkPreview(rows, operation, current, input, replacement, option) {
-  const field = operation === "area" ? "area_id" : operation.startsWith("label_") ? "labels" : "name";
-  const regex = operation === "regex" ? new RegExp(input, "gu") : null;
-  return rows.map((row, index) => {
+const bulkFields = {
+  area: "area_id", label_add: "labels", label_remove: "labels",
+  hide: "hidden_by", unhide: "hidden_by", disable: "disabled_by", enable: "disabled_by",
+};
+
+export function bulkPreview(rows, operation, current, option) {
+  const field = bulkFields[operation];
+  if (!field) throw new Error("Unsupported bulk operation");
+  const eligible = rows.filter((row) => row.values && !row.readonly && row.editable !== false &&
+    Object.hasOwn(row.values, field) && canEdit(row, field) &&
+    (!field.endsWith("_by") || row.kind === "entity"));
+  const changes = eligible.map((row) => {
     const before = current(row, field);
-    const name = before ?? row.original_name ?? row.title;
     let after;
     switch (operation) {
       case "area": after = option || null; break;
-      case "label_add": after = [...new Set([...before, option])].sort(); break;
-      case "label_remove": after = before.filter((id) => id !== option); break;
-      case "reset": after = null; break;
-      case "prefix": after = input + name; break;
-      case "suffix": after = name + input; break;
-      case "replace": after = name.replaceAll(input, () => replacement); break;
-      case "regex": after = name.replace(regex, replacement); break;
-      case "number": after = name + " " + (Number(input) + index); break;
+      case "label_add": after = [...new Set([...(before ?? []), option])].sort(); break;
+      case "label_remove": after = (before ?? []).filter((id) => id !== option); break;
+      case "hide": case "disable": after = "user"; break;
+      case "unhide": case "enable": after = null; break;
     }
-    if (field === "name" && after === "") after = null;
     return { row, field, before, after };
   }).filter(({ before, after }) => !same(before, after));
+  return { changes, skipped: rows.length - eligible.length };
 }

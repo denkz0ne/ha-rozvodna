@@ -63,8 +63,11 @@ do `<config>/custom_components/` a pokračuj reštartom a pridaním integrácie.
 Tabuľka zobrazuje všetky zodpovedajúce záznamy v jednom zozname bez stránkovania.
 Pri tisícoch záznamov môže úplné vykreslenie spotrebovať viac pamäte prehliadača.
 
-Hromadné úpravy otvor po označení riadkov. Náhľad podporuje oblasť, štítky
-a úpravy názvov. Po prenesení náhľadu do tabuľky potvrď dotknuté riadky.
+Shift + kliknutie vyberie súvislý rozsah viditeľných riadkov. Hromadná úprava
+ponúka oblasť a štítky pre označené zariadenia aj entity a skrytie alebo
+vypnutie pre upraviteľné označené entity. Hodnoty spravované Home Assistantom
+alebo integráciou sa preskočia. Názvy, ID a ikony sa menia iba jednotlivo.
+Po prenesení náhľadu do tabuľky potvrď dotknuté riadky.
 
 Pri odstránení integrácie zmizne panel. SQLite história a staging zostanú
 v priečinku `<config>/rozvodna` pre prípad opätovného pridania.

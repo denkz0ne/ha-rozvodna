@@ -15,7 +15,8 @@ class RozvodnaPanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     Object.assign(this, {
       view: "registry", integrations: new Set(), stateFilters: new Set(), query: "", sort: 1, filterWidth: 248, generation: 0,
-      expanded: new Set(), selected: new Set(), working: new Map(), errors: new Map(),
+      expanded: new Set(), selected: new Set(), selectionAnchor: null, selectionShift: false,
+      working: new Map(), errors: new Map(),
       filtersOpen: window.matchMedia("(min-width: 871px)").matches, filterQuery: "",
       objects: new Map(), unsubscribers: [], t: language(),
       historyRows: [], historyFilter: {}, historyOffset: 0,
@@ -108,6 +109,8 @@ class RozvodnaPanel extends HTMLElement {
       this.working.clear();
       this.errors.clear();
       this.selected.clear();
+      this.selectionAnchor = null;
+      this.selectionShift = false;
       this.setWorkspace(blank());
       this.render();
     }
@@ -361,6 +364,38 @@ class RozvodnaPanel extends HTMLElement {
     }
   }
 
+  updateSelection(input) {
+    const index = Number(input.closest("tr").dataset.row);
+    const row = this.rows[index];
+    if (!row) return;
+    const checked = input.checked;
+    const anchorIndex = this.selectionAnchor ? this.rows.findIndex((item) => item.values &&
+      rowKey(item) === this.selectionAnchor) : -1;
+    if (this.selectionShift && anchorIndex >= 0) {
+      const start = Math.min(anchorIndex, index);
+      const end = Math.max(anchorIndex, index);
+      for (let i = start; i <= end; i++) {
+        const item = this.rows[i];
+        if (!item?.values || item.editable === false) continue;
+        const id = rowKey(item);
+        if (checked) this.selected.add(id);
+        else this.selected.delete(id);
+        const tr = this.body.querySelector(`tr[data-row="${i}"]`);
+        const checkbox = tr?.querySelector('input[data-input="select"]');
+        if (checkbox) checkbox.checked = checked;
+        tr?.setAttribute("aria-selected", String(checked));
+      }
+    } else {
+      const id = rowKey(row);
+      if (checked) this.selected.add(id);
+      else this.selected.delete(id);
+      input.closest("tr").setAttribute("aria-selected", String(checked));
+      this.selectionAnchor = id;
+    }
+    this.selectionShift = false;
+    this.renderSelection();
+  }
+
   change(event) {
     const input = event.target;
     switch (input.dataset.input) {
@@ -373,12 +408,16 @@ class RozvodnaPanel extends HTMLElement {
         if (input.checked) this.integrations.add(input.value);
         else this.integrations.delete(input.value);
         this.selected.clear();
+        this.selectionAnchor = null;
+        this.selectionShift = false;
         this.body.scrollTop = 0;
         this.render();
         break;
       case "all-integrations":
         this.integrations.clear();
         this.selected.clear();
+        this.selectionAnchor = null;
+        this.selectionShift = false;
         this.body.scrollTop = 0;
         this.render();
         break;
@@ -386,6 +425,8 @@ class RozvodnaPanel extends HTMLElement {
         if (input.checked) this.stateFilters.add(input.value);
         else this.stateFilters.delete(input.value);
         this.selected.clear();
+        this.selectionAnchor = null;
+        this.selectionShift = false;
         this.body.scrollTop = 0;
         this.render();
         break;
@@ -402,11 +443,7 @@ class RozvodnaPanel extends HTMLElement {
         break;
       }
       case "select": {
-        const row = this.rows[Number(input.closest("tr").dataset.row)];
-        if (input.checked) this.selected.add(rowKey(row));
-        else this.selected.delete(rowKey(row));
-        input.closest("tr").setAttribute("aria-selected", String(input.checked));
-        this.renderSelection();
+        this.updateSelection(input);
         break;
       }
       case "history-field":
@@ -418,6 +455,7 @@ class RozvodnaPanel extends HTMLElement {
       case "bulk-operation":
         this.bulkOperation = input.value;
         this.bulkValues = this.bulkResult = null;
+        this.bulkSkipped = 0;
         this.renderBody();
         break;
     }
@@ -430,6 +468,11 @@ class RozvodnaPanel extends HTMLElement {
   }
 
   async click(event) {
+    const selectionInput = event.target.closest?.('input[data-input="select"]');
+    if (selectionInput) {
+      this.selectionShift = event.shiftKey;
+      return;
+    }
     const target = event.target.closest("button[data-action]");
     if (!target || target.disabled || this.busy || !this.hass?.user?.is_admin) return;
     const field = target.closest("td")?.dataset.field;
@@ -461,6 +504,8 @@ class RozvodnaPanel extends HTMLElement {
         break;
       case "clear-selection":
         this.selected.clear();
+        this.selectionAnchor = null;
+        this.selectionShift = false;
         this.renderSelection();
         this.renderBody();
         break;
@@ -477,6 +522,7 @@ class RozvodnaPanel extends HTMLElement {
       case "bulk":
         this.bulkOperation = "area";
         this.bulkValues = this.bulkResult = null;
+        this.bulkSkipped = 0;
         this.show("bulk");
         break;
       case "preview": {

@@ -50,6 +50,13 @@ iba na čítanie. Bežné dostupné entity stavovú ikonu nemajú. Stavové filt
   písmen. Šípky presúvajú fokus po položkách, medzerník mení zaškrtnutie štítka.
 - Posuvný deliaci prvok mení šírku bočného panela myšou alebo šípkami
   na klávesnici. Na úzkej obrazovke zostáva bočný panel vysúvacím filtrom.
+- Shift + kliknutie vyberie súvislý rozsah aktuálne viditeľných riadkov medzi
+  kotviacim a kliknutým riadkom. Riadky bez výberového políčka sa preskočia.
+- Hromadná úprava podporuje oblasť a štítky na označených zariadeniach aj
+  entitách; skrytie a vypnutie sa menia iba na upraviteľných označených
+  entitách. Nezmeniteľné alebo Home Assistantom/integráciou spravované riadky
+  sa preskočia a zobrazí sa ich počet. Názvy, ID entít, ikony a ostatné
+  individuálne vlastnosti sa hromadne nemenia.
 - Prepínač **Skrytie** používa natívny prvok Home Assistanta. Hodnoty
   `hidden_by` nastavené inou integráciou alebo systémom sú iba na čítanie;
   používateľ môže meniť len vlastné skrytie.
