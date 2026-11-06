@@ -1,4 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { referencePaths } from "../../custom_components/rozvodna/panel/references.js";
+
+test("manual reference scan caps results and reports truncated coverage", () => {
+  const report = referencePaths({ entity_ids: Array(4).fill("sensor.old") }, "sensor.old", 2);
+  expect(report.matches).toHaveLength(2);
+  expect(report.truncated).toBe(true);
+});
 
 const ids = {
   "ZB50 Predsieň": "z", "ESP80 Meteo": "e", Svetlo: "light", "Kvalita spojenia": "link", Počasie: "orphan",
@@ -78,6 +85,65 @@ test("invalid input stays focused and stage re-edit can return to HA value", asy
   await page.keyboard.press("Escape");
   await entity.getByRole("button", { name: "Potvrdiť tento riadok" }).click();
   await expect(page.getByRole("button", { name: "Uložiť", exact: true })).toBeDisabled();
+});
+
+test("entity ID rename previews references and allows saving without automatic repairs", async ({ page }) => {
+  await page.goto("/tests/browser/fixture.html?references");
+  page.once("dialog", (dialog) => dialog.accept());
+  await row(page, "ZB50 Predsieň").getByRole("button", { name: "Rozbaliť alebo zbaliť" }).click();
+  const entity = row(page, "Svetlo");
+  await cell(entity, "entity_id").click();
+  await entity.getByRole("textbox", { name: "ID entity" }).fill("sensor.new");
+  await page.keyboard.press("Tab");
+  const stage = entity.getByRole("button", { name: "Potvrdiť tento riadok" });
+  await stage.click();
+  await stage.click();
+  await page.getByRole("button", { name: "Uložiť", exact: true }).click();
+  const dialog = page.locator("dialog.reference-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Dashboard · Domov");
+  await expect(dialog).toContainText("Automatizácia · Test automation");
+  await expect(dialog).toContainText("/trigger/0/entity_id");
+  await expect(dialog).toContainText("/condition/0/value_template");
+  await expect(dialog.locator('[data-reference-id="auto-ref"]')).toBeChecked();
+  await dialog.getByRole("button", { name: "Uložiť bez opráv" }).click();
+  const commit = (await requests(page, "commit"))[0];
+  expect(commit.reference_token).toBe("preview-token");
+  expect(commit.reference_ids).toEqual([]);
+});
+
+test("entity rename lets the admin confirm selected automatic dashboard repairs", async ({ page }) => {
+  await page.goto("/tests/browser/fixture.html?references");
+  page.once("dialog", (dialog) => dialog.accept());
+  await row(page, "ZB50 Predsieň").getByRole("button", { name: "Rozbaliť alebo zbaliť" }).click();
+  const entity = row(page, "Svetlo");
+  await cell(entity, "entity_id").click();
+  await entity.getByRole("textbox", { name: "ID entity" }).fill("sensor.new");
+  await page.keyboard.press("Tab");
+  const stage = entity.getByRole("button", { name: "Potvrdiť tento riadok" });
+  await stage.click();
+  await stage.click();
+  await page.getByRole("button", { name: "Uložiť", exact: true }).click();
+  const dialog = page.locator("dialog.reference-dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Opraviť vybrané a uložiť" }).click();
+  const commit = (await requests(page, "commit"))[0];
+  expect(commit.reference_token).toBe("preview-token");
+  expect(commit.reference_ids).toEqual(["auto-ref"]);
+});
+
+test("Shift selects a visible row range and bulk choices omit individual fields", async ({ page }) => {
+  await page.goto("/tests/browser/fixture.html");
+  await row(page, "ZB50 Predsieň").getByRole("button", { name: "Rozbaliť alebo zbaliť" }).click();
+  const first = row(page, "Svetlo").locator('input[data-input="select"]');
+  const last = row(page, "Kvalita spojenia").locator('input[data-input="select"]');
+  await first.click();
+  await last.click({ modifiers: ["Shift"] });
+  await expect(page.locator('tbody input[data-input="select"]:checked')).toHaveCount(2);
+  await page.getByRole("button", { name: "Hromadná úprava (2)" }).click();
+  const action = page.getByRole("combobox", { name: "Hromadná úprava" });
+  const options = await action.locator("option").evaluateAll((items) => items.map((item) => item.value));
+  expect(options).toEqual(["area", "label_add", "label_remove", "hide", "unhide", "disable", "enable"]);
 });
 
 test("bulk preview goes through draft, commit history and selected revert", async ({ page }) => {
@@ -318,9 +384,12 @@ test("entity and device icons open native Home Assistant destinations", async ({
   const name = device.locator("button.object-name");
   await expect(device.locator("ha-tooltip").first()).toHaveText("Otvoriť zariadenie v novej karte");
   const before = await name.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const borderBefore = await name.evaluate((element) => getComputedStyle(element).borderColor);
   await name.hover();
   const hovered = await name.evaluate((element) => getComputedStyle(element).backgroundColor);
-  expect(hovered).not.toBe(before);
+  const borderHovered = await name.evaluate((element) => getComputedStyle(element).borderColor);
+  expect(hovered).toBe(before);
+  expect(borderHovered).not.toBe(borderBefore);
 
   const popupPromise = page.waitForEvent("popup");
   await device.locator("button.device-icon-button").click();

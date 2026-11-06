@@ -25,12 +25,13 @@ export function history(panel) {
   }
   if (commit) {
     const rows = commit.operations.map((op) => {
-      const current = panel.objects.get(rowKey(op))?.values[op.field];
+      const current = op.kind === "reference" ? undefined : panel.objects.get(rowKey(op))?.values[op.field];
+      const property = op.kind === "reference" ? `${t.reference} · ${op.field}` : (t[op.field] ?? op.field);
       return `<tr><td><input type="checkbox" aria-label="${t.select}" data-position="${op.position}"
         ${op.status === "saved" ? "" : "disabled"}></td><td>${esc(op.title)}<br><small>${esc(op.integration)}</small></td>
-        <td>${t[op.field]}</td><td>${esc(panel.describe(op.field, op.before))}</td>
+        <td>${esc(property)}</td><td>${esc(panel.describe(op.field, op.before))}</td>
         <td>${esc(panel.describe(op.field, op.after))}</td>
-        <td>${esc(current === undefined ? t.missing_object : panel.describe(op.field, current))}</td>
+        <td>${esc(op.kind === "reference" ? "—" : current === undefined ? t.missing_object : panel.describe(op.field, current))}</td>
         <td>${esc(t[op.status] ?? op.status)}${op.error ? " · " + esc(t[op.error] ?? op.error) : ""}
         ${op.source ? `<br>${t.source} <code>${esc(op.source)}</code>` : ""}</td></tr>`;
     });

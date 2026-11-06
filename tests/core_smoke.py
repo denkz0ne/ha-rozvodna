@@ -109,7 +109,9 @@ async def smoke(folder):
                 assert state["revision"] == 1 and len(state["changes"]) == 4, state
                 denied = await ws("rozvodna/commit", revision=1, success=False)
                 assert denied["code"] == "rename_confirmation_required", denied
-                commit = await ws("rozvodna/commit", revision=1, acknowledge_rename=True)
+                references = await ws("rozvodna/references", revision=1)
+                commit = await ws("rozvodna/commit", revision=1, acknowledge_rename=True,
+                                  reference_token=references["token"], reference_ids=[])
                 assert commit["status"] == "saved", commit
                 assert entities.async_get(entity.id).entity_id == "sensor.rozvodna_renamed"
                 assert entities.async_get(entity.id).name == "Own name"
@@ -118,7 +120,9 @@ async def smoke(folder):
                 assert len(undo["changes"]) == 4 and entities.async_get(entity.id).name == "Own name"
                 assert await hass.config_entries.async_reload(entry.entry_id)
                 assert len((await ws("rozvodna/state"))["changes"]) == 4
-                undone = await ws("rozvodna/commit", revision=3, acknowledge_rename=True)
+                undo_references = await ws("rozvodna/references", revision=3)
+                undone = await ws("rozvodna/commit", revision=3, acknowledge_rename=True,
+                                  reference_token=undo_references["token"], reference_ids=[])
                 assert undone["status"] == "saved", undone
                 assert entities.async_get(entity.id).entity_id == entity.entity_id
                 assert entities.async_get(entity.id).name is None

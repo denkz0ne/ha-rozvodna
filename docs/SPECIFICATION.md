@@ -66,6 +66,35 @@ iba na čítanie. Bežné dostupné entity stavovú ikonu nemajú. Stavové filt
 - **Skontrolovať potvrdené** ukáže všetky návrhy vrátane konfliktov a umožní
   zrušiť vybrané položky. Pri konflikte sa zmena automaticky neprepíše.
 
+### Kontrola odkazov pri zmene ID
+
+Pred uložením premenovania sa načítajú úložné dashboardy cez rozhranie
+Lovelace a konfigurácie práve načítaných automatizácií a skriptov. Kontrola
+rozpoznáva presné hodnoty v poliach `entity`, `entity_id` a `entity_ids`.
+Presné odkazy v úložných dashboardoch možno po náhľade opraviť automaticky.
+Odkazy vo vlastných kartách sa považujú za nejednoznačné a zobrazia sa len na
+ručnú kontrolu.
+Odkazy v automatizáciách a skriptoch sú iba na čítanie; používateľ ich opraví
+ručne v Home Assistante. Ich konfigurácie sa načítajú cez HA WebSocket príkazy,
+najviac 500 položiek na kontrolu. Jedna kontrola podporuje najviac 100 zmien ID
+a 5 000 nálezov. Ak sa limit nálezov dosiahne pri ručnej kontrole, dialóg to
+oznámi a zostávajúce nálezy sa musia skontrolovať ručne. Dynamické šablóny sa
+nikdy nemenia automaticky.
+
+Kontrola pred uložením vytvorí kontrolný odtlačok úložných dashboardov. Ak sa
+dashboard po náhľade zmení, commit sa odmietne a kontrola sa musí zopakovať.
+Automatizácie a skripty sa čítajú cez ich administračné WebSocket príkazy;
+keďže sa nemenia, ich konfigurácia sa neukladá ani neprepisuje.
+Automatická oprava aj premenovanie sú samostatné operácie v rovnakom zázname
+histórie. Čiastočné zlyhanie je označené ako čiastočný commit. Návrat ID
+entity a úspešných opráv odkazov sa musí vybrať spoločne; história neobsahuje
+celé automatizácie, skripty ani dashboardy.
+
+YAML dashboardy sa neskenujú ani neupravujú. Blueprints, externé súbory,
+konfigurácie iných integrácií a dynamické odkazy bez rozpoznateľného zápisu
+sa nedajú pokryť. Rozvodňa to používateľovi výslovne oznámi a odporučí ručnú
+kontrolu.
+
 ## História
 
 Úspešný alebo začatý zápis má samostatný záznam. Detail porovná hodnotu pred

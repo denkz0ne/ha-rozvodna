@@ -4,7 +4,7 @@ Administračný panel na prehľadávanie a úpravu registrov Home Assistanta.
 Zariadenia a entity sú v jednej tabuľke. Každý riadok sa potvrdzuje zvlášť
 a globálne **Uložiť** zapíše potvrdené návrhy zo všetkých integrácií.
 
-**Verzia 0.1.0 · Home Assistant Core 2026.11 · MIT**
+**Verzia 0.2.0 · Home Assistant Core 2026.11 · MIT**
 
 ![Panel Rozvodne v Home Assistante](docs/images/panel-preview.png)
 
@@ -53,8 +53,9 @@ do `<config>/custom_components/` a pokračuj reštartom a pridaním integrácie.
 5. Prepínač **Skrytie** mení viditeľnosť rovnako ako natívny prepínač
    Home Assistanta. Stav spravovaný integráciou zostane iba na čítanie.
 6. **Uložiť** overí a zapíše potvrdené návrhy. Zmenu ID entity musíš
-   potvrdiť samostatne. Odkazy v YAML, šablónach a kartách skontroluj
-   podľa použitých ID.
+   potvrdiť samostatne. Pred zápisom dostaneš kontrolu známych odkazov.
+   Presné odkazy v úložných dashboardoch môžeš opraviť automaticky; odkazy
+   v automatizáciách a skriptoch sa zobrazia na ručnú kontrolu.
 7. V **Histórii** otvor detail zápisu. **Pripraviť návrat** vloží opačné
    hodnoty medzi potvrdené návrhy. Môžeš vybrať aj jednotlivé položky.
 8. Pri konflikte obnov register, skontroluj detail a zruš alebo uprav
@@ -71,6 +72,18 @@ Po prenesení náhľadu do tabuľky potvrď dotknuté riadky.
 
 Pri odstránení integrácie zmizne panel. SQLite história a staging zostanú
 v priečinku `<config>/rozvodna` pre prípad opätovného pridania.
+
+Kontrola závislostí nepokrýva YAML dashboardy, blueprints, externé súbory,
+vlastné karty, konfigurácie iných integrácií ani všetky dynamické šablóny. Tieto odkazy
+skontroluj ručne. Automatické opravy menia iba presné statické hodnoty v
+úložných dashboardoch cez rozhranie Home Assistanta. Zmena úložného dashboardu
+po náhľade vyvolá konflikt. Automatizácie a skripty sa čítajú cez ich HA
+WebSocket API; naraz sa skontroluje najviac 500 položiek a do nich sa nič
+nezapisuje. Jedna kontrola podporuje najviac 100 zmien ID a 5 000 nálezov.
+Ak sa limit dosiahne, panel upozorní na nálezy, ktoré treba skontrolovať ručne.
+V histórii sa ukladajú iba typ zdroja,
+umiestnenie a staré/nové ID, nie celý obsah konfigurácie. Návrat obsahujúci
+premenu a automatické opravy sa vykonáva spoločne.
 
 [Architektúra](docs/ARCHITECTURE.md) · [Špecifikácia](docs/SPECIFICATION.md) ·
 [API](docs/API.md) · [Databáza](docs/DATABASE.md) · [Vývoj](docs/DEVELOPMENT.md) ·

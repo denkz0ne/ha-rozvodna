@@ -10,15 +10,19 @@
 - Ikonové odkazy do natívneho detailu entity a stránky zariadenia.
 - Responzívny panel filtrov, native hide switch a slovenské/anglické rozhranie.
 
+## 0.2.0
+
+- Hromadná úprava oblasti, štítkov, skrytia a vypnutia; Shift výber rozsahu.
+- Jemný rámček názvu pri hoveri a zarovnanie stavovej ikony entity.
+- Kontrola odkazov pred premenovaním entity s bezpečnými opravami úložných
+  dashboardov cez HA API a ručnými upozorneniami pre ostatné zistené odkazy.
+
 ## Plánované
 
 - Samostatné filtre config entry, subentry, oblastí a štítkov.
 - Detailnejšie prezeranie a porovnanie počiatočného snapshotu.
 - Priebežné načítanie dotknutých záznamov a výkonové vylepšenia veľkých zoznamov
   bez návratu k stránkovaniu.
-- Kontrola odkazov pred premenovaním entity a bezpečná ponuka automatických
-  alebo manuálnych opráv v podporovaných typoch konfigurácie. Návrh a limity
-  sú v [issue #12](https://github.com/denkz0ne/ha-rozvodna/issues/12).
 - Bezpečný plán viacstupňových presunov medzi obsadenými ID.
 
 Aktuálna verzia odmieta presuny na obsadené ID a ich výmeny. Úplné vykreslenie

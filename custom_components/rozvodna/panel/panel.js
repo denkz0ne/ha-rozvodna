@@ -5,9 +5,53 @@ import { button, esc, icon } from "./html.js";
 import { filters, toolbar } from "./toolbar.js";
 import { language } from "./strings.js";
 import styles from "./styles.js";
+import { referencePaths } from "./references.js";
 
 const EVENTS = ["device_registry_updated", "entity_registry_updated", "area_registry_updated", "label_registry_updated"];
 const blank = () => ({ revision: 0, changes: [], issues: [] });
+const MAX_REFERENCE_MATCHES = 5000;
+
+async function addManualReferences(panel, report, renames) {
+  const sources = (panel.data?.entities ?? []).filter((row) => ["automation", "script"].includes(
+    row.values?.entity_id?.split(".")[0]));
+  let sequence = 0;
+  const limit = 500;
+  const inspected = sources.slice(0, limit);
+  const results = [];
+  for (let start = 0; start < inspected.length; start += 16) {
+    results.push(...await Promise.all(inspected.slice(start, start + 16).map(async (row) => {
+      const domain = row.values.entity_id.split(".")[0];
+      try {
+        const { config } = await panel.hass.callWS({ type: `${domain}/config`, entity_id: row.values.entity_id });
+        return { row, domain, config };
+      } catch {
+        return { row, domain, unavailable: true };
+      }
+    })));
+  }
+  report.coverage.automations = results.filter((item) => item.domain === "automation" && !item.unavailable).length;
+  report.coverage.scripts = results.filter((item) => item.domain === "script" && !item.unavailable).length;
+  report.coverage.unavailable_sources = results.filter((item) => item.unavailable).length + sources.length - inspected.length;
+  report.coverage.truncated_matches = false;
+  for (const result of results) {
+    if (result.unavailable) continue;
+    for (const rename of renames) {
+      const remaining = MAX_REFERENCE_MATCHES - report.matches.length;
+      const found = referencePaths(result.config, rename.before, remaining);
+      for (const match of found.matches) {
+        report.matches.push({
+          id: `manual-${sequence++}`, source_id: `${result.domain}:${result.row.values.entity_id}`,
+          source_kind: result.domain, source: `${result.domain === "automation" ? panel.t.automation : panel.t.script} · ${result.row.title}`,
+          location: match.path, old: rename.before, new: rename.after, automatic: false, reason: match.reason,
+        });
+      }
+      if (found.truncated) report.coverage.truncated_matches = true;
+      if (report.coverage.truncated_matches) break;
+    }
+    if (report.coverage.truncated_matches) break;
+  }
+  return report;
+}
 
 class RozvodnaPanel extends HTMLElement {
   constructor() {
@@ -563,10 +607,21 @@ class RozvodnaPanel extends HTMLElement {
   }
 
   async save() {
-    const rename = this.workspace.changes.some((op) => op.field === "entity_id");
+    const renames = this.workspace.changes.filter((op) => op.field === "entity_id");
+    const rename = renames.length > 0;
     if (rename && !window.confirm(this.t.rename)) return;
     await this.run(async () => {
-      const result = await this.ws("commit", { revision: this.workspace.revision, acknowledge_rename: rename });
+      let referenceReview = null;
+      if (rename) {
+        const report = await this.ws("references", { revision: this.workspace.revision });
+        await addManualReferences(this, report, renames);
+        referenceReview = await this.reviewReferences(report);
+        if (!referenceReview) return;
+      }
+      const result = await this.ws("commit", {
+        revision: this.workspace.revision, acknowledge_rename: rename,
+        ...(referenceReview ? { reference_token: referenceReview.token, reference_ids: referenceReview.ids } : {}),
+      });
       if (result.status === "conflict") {
         this.issues = new Map(result.issues.map((op) => [key(op), op.code]));
       } else {
@@ -583,6 +638,56 @@ class RozvodnaPanel extends HTMLElement {
       if (result.operations?.some((op) => op.status === "saved" && op.field === "disabled_by" && op.after === null)) {
         this.message += " · " + this.t.enabled_note;
       }
+    });
+  }
+
+  reviewReferences(report) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "reference-dialog";
+    const automatic = report.matches.filter((item) => item.automatic);
+    const manual = report.matches.filter((item) => !item.automatic);
+    const { t } = this;
+    const autoRows = automatic.map((item) => `<label class="reference-match">
+      <input type="checkbox" data-reference-id="${esc(item.id)}" checked>
+      <span><strong>${esc(item.source)}</strong><small>${esc(item.location)} · ${esc(item.old)} → ${esc(item.new)}</small></span>
+    </label>`).join("");
+    const manualRows = manual.map((item) => `<li><strong>${esc(item.source)}</strong>
+      <code>${esc(item.location)}</code> · ${esc(item.old)} → ${esc(item.new)}
+      <small>${esc(t[item.reason] ?? t.reference_manual)}</small></li>`).join("");
+    const unknownYaml = report.coverage.yaml_dashboards;
+    dialog.innerHTML = `<section role="document">
+      <h2>${esc(t.reference_title)}</h2><p>${esc(t.reference_scope)}</p>
+      <h3>${esc(t.reference_auto)} (${automatic.length})</h3>
+      ${autoRows || `<p class="muted">${esc(t.reference_none_auto)}</p>`}
+      ${manual.length ? `<h3>${esc(t.reference_manual_heading)} (${manual.length})</h3><ul class="reference-list">${manualRows}</ul>` : ""}
+      <p class="reference-coverage">${esc(t.reference_coverage(unknownYaml, report.coverage.automations ?? 0,
+        report.coverage.scripts ?? 0, report.coverage.unavailable_sources ?? 0,
+        report.coverage.unavailable_dashboards ?? 0, report.coverage.truncated_matches ?? false))}</p>
+      <div class="reference-actions">
+        <button type="button" data-choice="cancel">${esc(t.cancel)}</button>
+        <button type="button" data-choice="skip">${esc(t.save_without_repairs)}</button>
+        <button type="button" class="primary" data-choice="apply" ${automatic.length ? "" : "disabled"}>${esc(t.apply_repairs)}</button>
+      </div>
+    </section>`;
+    this.shadowRoot.append(dialog);
+    return new Promise((resolve) => {
+      let finished = false;
+      const finish = (choice) => {
+        if (finished) return;
+        finished = true;
+        dialog.close();
+        dialog.remove();
+        resolve(choice);
+      };
+      dialog.addEventListener("cancel", (event) => { event.preventDefault(); finish(null); });
+      dialog.querySelectorAll("[data-choice]").forEach((button) => button.addEventListener("click", () => {
+        if (button.dataset.choice === "cancel") return finish(null);
+        const ids = button.dataset.choice === "apply" ? [...dialog.querySelectorAll("[data-reference-id]:checked")]
+          .map((input) => input.dataset.referenceId) : [];
+        finish({ token: report.token, ids });
+      }));
+      dialog.showModal();
+      dialog.querySelector("[data-choice=apply]:not(:disabled)")?.focus();
     });
   }
 

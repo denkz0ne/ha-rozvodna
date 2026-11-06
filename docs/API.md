@@ -9,7 +9,8 @@ Typ požiadavky je `rozvodna/<príkaz>`. HA pridá obálku
 | `snapshot` | — | `devices`, `entities`, `areas`, `labels` |
 | `state` | — | `revision`, `changes`, `issues` |
 | `stage` | `revision`, `changes[]`, voliteľne `drop[]` | nový `state` |
-| `commit` | `revision`, voliteľne `message` a `acknowledge_rename` | detail zápisu alebo `{status:"conflict", issues}` |
+| `references` | `revision` | `token`, nájdené `matches[]` a rozsah kontroly pred premenovaním entity |
+| `commit` | `revision`, voliteľne `message`, `acknowledge_rename`, `reference_token`, `reference_ids[]` | detail zápisu alebo `{status:"conflict", issues}` |
 | `history` | voliteľne `kind` a `object_id`, `field` pri filtri objektu, `offset` | najviac 50 sumarizovaných zápisov |
 | `detail` | `commit_id` | hlavička a `operations[]` |
 | `revert` | `revision`, `commit_id`, voliteľne `positions[]` | nový `state` s opačnými návrhmi |
@@ -35,3 +36,13 @@ Operácia pridáva `position`, `title`, `integration`, `status` a `error`.
 `missing_object`, `changed`, `occupied`, `duplicate_target` a
 `rename_confirmation_required`. Pri `stale_revision` znovu načítaj stav a
 skontroluj obsah pred ďalšou požiadavkou.
+
+Pri premenovaní entity panel najprv zavolá `references`. Commit musí odoslať
+vrátený `token`; výber opráv obsahuje iba ID presných odkazov v úložných
+dashboardoch. UI navyše číta načítané automatizácie a skripty cez ich natívne
+WebSocket príkazy a zobrazuje ich odkazy iba na ručnú kontrolu (najviac 500
+položiek). Zmena úložného dashboardu po náhľade spôsobí
+`reference_conflict`. Opravy dashboardov majú v detaile `kind: "reference"`,
+JSON Pointer v `field` a staré/nové entity ID v `before`/`after`.
+Panel zobrazí najviac 5 000 nálezov; pri dosiahnutí limitu oznámi, že ďalšie
+ručne kontrolované nálezy sa v zozname nezobrazili.
