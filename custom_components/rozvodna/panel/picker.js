@@ -1,4 +1,5 @@
 import { esc, icon, registryIcon } from "./html.js";
+import { normalizeSearch } from "./model.js";
 
 export function labelColor(color) {
   return /^#[0-9a-f]{6}$/i.test(color ?? "") ? color : null;
@@ -23,7 +24,11 @@ export function makePicker(panel, field, value, onSelect) {
   for (const id of multi ? value : value ? [value] : []) {
     if (!options.has(id)) options.set(id, { id, name: id });
   }
-  const entries = [...options.values()].sort((a, b) => a.id && b.id ? a.name.localeCompare(b.name) : a.id ? 1 : -1);
+  const selected = new Set(multi ? value : value ? [value] : []);
+  const entries = [...options.values()].sort((a, b) => {
+    if (multi && selected.has(a.id) !== selected.has(b.id)) return selected.has(a.id) ? -1 : 1;
+    return a.id && b.id ? a.name.localeCompare(b.name) : a.id ? 1 : -1;
+  });
   const popup = document.createElement("div");
   popup.setAttribute("popover", "manual");
   popup.setAttribute("role", "group");
@@ -50,9 +55,9 @@ export function makePicker(panel, field, value, onSelect) {
   const search = popup.querySelector("input[type=search]");
   const items = [...popup.querySelectorAll("[data-option]")];
   search.addEventListener("input", () => {
-    const query = search.value.trim().toLocaleLowerCase();
+    const query = normalizeSearch(search.value.trim());
     items.forEach((item, index) => {
-      item.hidden = !entries[index].name.toLocaleLowerCase().includes(query);
+      item.hidden = !normalizeSearch(entries[index].name).includes(query);
     });
     popup.querySelector(".picker-empty").hidden = items.some((item) => !item.hidden);
   });

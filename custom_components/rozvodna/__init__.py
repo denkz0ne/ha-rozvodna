@@ -45,7 +45,7 @@ async def async_setup_entry(hass, entry):
         webcomponent_name="rozvodna-panel",
         sidebar_title="Rozvodňa",
         sidebar_icon="mdi:transmission-tower",
-        module_url=f"{ASSET_URL}/panel.js?v=0.1.0-alpha",
+        module_url=f"{ASSET_URL}/panel.js?v=0.1.0",
         require_admin=True,
         config_panel_domain=DOMAIN,
     )

@@ -1,5 +1,5 @@
-import { fields, key, same } from "./model.js";
-import { grid, finishEdit, navigate, rowKey, startEdit } from "./grid.js";
+import { fields, key, normalizeSearch, same } from "./model.js";
+import { grid, cell, finishEdit, navigate, rowKey, startEdit } from "./grid.js";
 import { bulk, history, preview, review } from "./views.js";
 import { button, esc, icon } from "./html.js";
 import { filters, toolbar } from "./toolbar.js";
@@ -14,7 +14,7 @@ class RozvodnaPanel extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     Object.assign(this, {
-      view: "registry", integration: "", query: "", sort: 1, page: 0, generation: 0,
+      view: "registry", integrations: new Set(), stateFilters: new Set(), query: "", sort: 1, filterWidth: 248, generation: 0,
       expanded: new Set(), selected: new Set(), working: new Map(), errors: new Map(),
       filtersOpen: window.matchMedia("(min-width: 871px)").matches, filterQuery: "",
       objects: new Map(), unsubscribers: [], t: language(),
@@ -26,6 +26,8 @@ class RozvodnaPanel extends HTMLElement {
   connectedCallback() {
     this.shadowRoot.innerHTML = `<style>${styles}</style><main><header></header><div class="selection-bar" hidden></div>
       <div class="toolbar registry-toolbar"></div><div class="content"><aside id="registry-filters" hidden></aside>
+      <div class="filter-resizer" role="separator" aria-orientation="vertical" tabindex="0"
+        aria-label="${this.t.resize_filters}" aria-valuemin="192" aria-valuemax="480" aria-valuenow="248"></div>
       <div class="body"></div></div><footer></footer></main>`;
     const root = this.shadowRoot;
     this.header = root.querySelector("header");
@@ -36,14 +38,41 @@ class RozvodnaPanel extends HTMLElement {
     this.footer = root.querySelector("footer");
     this.listeners = new AbortController();
     const options = { signal: this.listeners.signal };
+    this.mobileQuery = window.matchMedia("(max-width: 870px)");
+    this.mobileQuery.addEventListener("change", (event) => {
+      this.filtersOpen = !event.matches;
+      this.renderToolbar();
+    }, options);
     root.addEventListener("click", (event) => this.click(event), options);
     root.addEventListener("change", (event) => this.change(event), options);
     root.addEventListener("input", (event) => this.input(event), options);
     root.addEventListener("keydown", (event) => navigate(this, event), options);
+    root.addEventListener("keydown", (event) => this.resizeKeydown(event), options);
+    root.addEventListener("pointerdown", (event) => this.resizeStart(event), options);
+    root.addEventListener("pointermove", (event) => this.resizeMove(event), options);
+    document.addEventListener("pointerup", () => this.resizeEnd(), options);
     this.outside = (event) => {
-      if (this.editor && !event.composedPath().includes(this.editor.td) && !finishEdit(this)) {
+      if (!this.editor || event.composedPath().includes(this.editor.td)) return;
+      if (!finishEdit(this)) {
         event.preventDefault();
         event.stopPropagation();
+      } else if (event.button === 0 && event.composedPath().includes(this)) {
+        const suppress = (click) => {
+          document.removeEventListener("click", suppress, true);
+          document.removeEventListener("pointerup", clear, true);
+          document.removeEventListener("pointercancel", clear, true);
+          if (!click.composedPath().includes(this)) return;
+          click.preventDefault();
+          click.stopImmediatePropagation();
+        };
+        const clear = () => setTimeout(() => {
+          document.removeEventListener("click", suppress, true);
+          document.removeEventListener("pointerup", clear, true);
+          document.removeEventListener("pointercancel", clear, true);
+        }, 0);
+        document.addEventListener("click", suppress, true);
+        document.addEventListener("pointerup", clear, { capture: true, once: true });
+        document.addEventListener("pointercancel", clear, { capture: true, once: true });
       }
     };
     document.addEventListener("pointerdown", this.outside, true);
@@ -65,6 +94,10 @@ class RozvodnaPanel extends HTMLElement {
     this._hass = value;
     this.t = language(value.language);
     if (!this.isConnected) return;
+    if (previous?.states !== value.states && this.view === "registry" && this.data) {
+      if (this.editor) this.stateRenderPending = true;
+      else this.renderBody();
+    }
     const identityChanged = previous?.user?.id !== value.user?.id || previous?.user?.is_admin !== value.user?.is_admin;
     if (identityChanged) {
       this.unsubscribe();
@@ -88,7 +121,9 @@ class RozvodnaPanel extends HTMLElement {
   set narrow(value) {
     if (value === this._narrow) return;
     this._narrow = value;
+    if (value) this.filtersOpen = false;
     if (this.header) this.renderHeader();
+    if (this.toolbar) this.renderToolbar();
   }
 
   connect() {
@@ -220,9 +255,53 @@ class RozvodnaPanel extends HTMLElement {
     const visible = this.view === "registry" && Boolean(this.data);
     this.toolbar.hidden = !visible;
     this.sidebar.hidden = !visible || !this.filtersOpen;
+    this.shadowRoot.querySelector(".content").classList.toggle("filters-open", visible && this.filtersOpen);
+    const resizer = this.shadowRoot.querySelector(".filter-resizer");
+    resizer.hidden = !visible || !this.filtersOpen || window.matchMedia("(max-width: 870px)").matches;
+    this.applyFilterWidth();
     this.toolbar.classList.toggle("has-filters", visible && this.filtersOpen);
     this.toolbar.innerHTML = visible ? toolbar(this) : "";
     this.sidebar.innerHTML = visible && this.filtersOpen ? filters(this) : "";
+  }
+
+  applyFilterWidth() {
+    const content = this.shadowRoot.querySelector(".content");
+    const resizer = this.shadowRoot.querySelector(".filter-resizer");
+    content.style.setProperty("--filter-width", `${this.filterWidth}px`);
+    resizer.setAttribute("aria-valuenow", String(this.filterWidth));
+  }
+
+  setFilterWidth(value) {
+    const maximum = Math.max(192, Math.min(480, Math.floor(this.clientWidth * 0.45)));
+    this.filterWidth = Math.max(192, Math.min(maximum, Math.round(value)));
+    this.applyFilterWidth();
+    this.shadowRoot.querySelector(".filter-resizer").setAttribute("aria-valuemax", String(maximum));
+  }
+
+  resizeStart(event) {
+    const resizer = event.target.closest?.(".filter-resizer");
+    if (!resizer || resizer.hidden) return;
+    event.preventDefault();
+    this.resizePointer = { x: event.clientX, width: this.filterWidth, id: event.pointerId };
+    resizer.setPointerCapture?.(event.pointerId);
+  }
+
+  resizeMove(event) {
+    if (!this.resizePointer || this.resizePointer.id !== event.pointerId) return;
+    this.setFilterWidth(this.resizePointer.width + event.clientX - this.resizePointer.x);
+  }
+
+  resizeEnd() { this.resizePointer = null; }
+
+  resizeKeydown(event) {
+    if (!event.target.matches?.(".filter-resizer")) return;
+    const step = event.shiftKey ? 32 : 16;
+    if (event.key === "ArrowRight") this.setFilterWidth(this.filterWidth + step);
+    else if (event.key === "ArrowLeft") this.setFilterWidth(this.filterWidth - step);
+    else if (event.key === "Home") this.setFilterWidth(192);
+    else if (event.key === "End") this.setFilterWidth(480);
+    else return;
+    event.preventDefault();
   }
 
   renderSelection() {
@@ -271,13 +350,13 @@ class RozvodnaPanel extends HTMLElement {
   input(event) {
     if (event.target.dataset.input === "filter-search") {
       this.filterQuery = event.target.value;
-      const query = this.filterQuery.toLocaleLowerCase().trim();
+      const query = normalizeSearch(this.filterQuery.trim());
       for (const item of this.sidebar.querySelectorAll("[data-filter-item]")) {
-        item.hidden = Boolean(item.querySelector("input").value) && !item.dataset.filterItem.includes(query);
+        item.hidden = !item.dataset.filterItem.includes(query);
       }
     } else if (event.target.dataset.input === "search") {
       this.query = event.target.value;
-      this.page = this.body.scrollTop = 0;
+      this.body.scrollTop = 0;
       this.renderBody();
     }
   }
@@ -287,23 +366,41 @@ class RozvodnaPanel extends HTMLElement {
     switch (input.dataset.input) {
       case "sort":
         this.sort = Number(input.value);
-        this.page = this.body.scrollTop = 0;
+        this.body.scrollTop = 0;
         this.renderBody();
         break;
       case "integration":
-        if (this.working.size && !window.confirm(this.t.discard_dirty)) {
-          const current = [...this.sidebar.querySelectorAll('input[name="integration"]')]
-            .find((option) => option.value === this.integration);
-          if (current) current.checked = true;
-          return;
-        }
-        this.working.clear();
+        if (input.checked) this.integrations.add(input.value);
+        else this.integrations.delete(input.value);
         this.selected.clear();
-        this.integration = input.value;
-        if (window.matchMedia("(max-width: 870px)").matches) this.filtersOpen = false;
-        this.page = this.body.scrollTop = 0;
+        this.body.scrollTop = 0;
         this.render();
         break;
+      case "all-integrations":
+        this.integrations.clear();
+        this.selected.clear();
+        this.body.scrollTop = 0;
+        this.render();
+        break;
+      case "state-filter":
+        if (input.checked) this.stateFilters.add(input.value);
+        else this.stateFilters.delete(input.value);
+        this.selected.clear();
+        this.body.scrollTop = 0;
+        this.render();
+        break;
+      case "hidden-switch": {
+        const row = this.rows[Number(input.closest("tr").dataset.row)];
+        if (!row || input.disabled) return;
+        this.draft(row, "hidden_by", input.checked ? "user" : null);
+        const td = input.closest("td");
+        const template = document.createElement("template");
+        template.innerHTML = "<table><tbody><tr>" + cell(this, row, "hidden_by") + "</tr></tbody></table>";
+        td.replaceChildren(...template.content.querySelector("td").childNodes);
+        td.closest("tr").querySelector('[data-action="stage"]').disabled = !fields.some((field) => this.working.has(key(row, field)));
+        this.renderFooter();
+        break;
+      }
       case "select": {
         const row = this.rows[Number(input.closest("tr").dataset.row)];
         if (input.checked) this.selected.add(rowKey(row));
@@ -344,6 +441,14 @@ class RozvodnaPanel extends HTMLElement {
     if (closePicker) return;
     switch (action) {
       case "edit": startEdit(this, row, field); break;
+      case "entity-icon":
+        this.dispatchEvent(new CustomEvent("hass-more-info", { bubbles: true, composed: true,
+          detail: { entityId: row.values.entity_id } }));
+        break;
+      case "device-icon":
+        window.open(`/config/devices/device/${encodeURIComponent(row.id)}`, "_blank", "noopener");
+        window.focus();
+        break;
       case "expand":
         if (this.expanded.has(row.id)) this.expanded.delete(row.id);
         else this.expanded.add(row.id);
@@ -361,13 +466,8 @@ class RozvodnaPanel extends HTMLElement {
         break;
       case "sort":
         this.sort *= -1;
-        this.page = this.body.scrollTop = 0;
-        this.render();
-        break;
-      case "prev-page": case "next-page":
-        this.page += action === "next-page" ? 1 : -1;
         this.body.scrollTop = 0;
-        this.renderBody();
+        this.render();
         break;
       case "stage": await this.run(() => this.stageRow(row)); break;
       case "save": await this.save(); break;

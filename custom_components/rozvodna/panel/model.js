@@ -1,28 +1,60 @@
 export const fields = ["name", "entity_id", "area_id", "labels", "icon", "hidden_by", "disabled_by"];
 export const key = (row, field) => JSON.stringify([row.kind, row.id ?? row.object_id, field ?? row.field]);
 export const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+export const normalizeSearch = (value) => String(value ?? "").normalize("NFD")
+  .replace(/\p{M}/gu, "").toLocaleLowerCase();
+
+export function entityStatuses(row, states = {}) {
+  const entity = states[row.values?.entity_id];
+  const unavailable = entity?.state === "unavailable";
+  const restored = entity?.attributes?.restored === true;
+  const disabled = Boolean(row.values?.disabled_by);
+  const hidden = Boolean(row.values?.hidden_by);
+  const readonly = Boolean(row.readonly);
+  return {
+    available: Boolean(entity?.state) && !unavailable,
+    unavailable,
+    enabled: !disabled,
+    disabled,
+    visible: !hidden,
+    hidden,
+    readonly,
+    restored,
+    indicator: restored ? "restored" : unavailable ? "unavailable" : disabled ? "disabled" :
+      hidden ? "hidden" : readonly ? "readonly" : null,
+  };
+}
 
 export function canEdit(row, field) {
   if (!Object.hasOwn(row.values, field)) return false;
   return !field.endsWith("_by") || [null, "user"].includes(row.values[field]);
 }
 
-export function visibleRows(data, { integration, query, expanded, sort }) {
+export function visibleRows(data, { integrations = [], stateFilters = [], hass, query, expanded, sort, integrationTitle }) {
   const compare = (a, b) => a.title.localeCompare(b.title) * sort;
-  const inScope = (row) => !integration || row.integration === integration;
-  const words = query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+  const selectedIntegrations = new Set(integrations);
+  const selectedStates = new Set(stateFilters);
+  const inScope = (row) => !selectedIntegrations.size || selectedIntegrations.has(row.integration);
+  const areas = new Map(data.areas.map((item) => [item.id, item.name]));
+  const labels = new Map(data.labels.map((item) => [item.id, item.name]));
+  const words = normalizeSearch(query).trim().split(/\s+/).filter(Boolean);
   const matches = (row) => {
-    const text = [row.title, row.values.name, row.values.entity_id, row.integration,
-      row.config_title, row.subentry_title].join(" ").toLocaleLowerCase();
+    const text = normalizeSearch([row.title, row.values?.name, row.values?.entity_id, row.integration,
+      integrationTitle?.(row.integration), row.config_title, row.subentry_title,
+      row.values?.area_id, areas.get(row.values?.area_id), row.effective_area, areas.get(row.effective_area),
+      ...(row.values?.labels ?? []).map((id) => labels.get(id) ?? id),
+      ...(row.inherited_labels ?? []).map((id) => labels.get(id) ?? id)].join(" "));
     return words.every((word) => text.includes(word));
   };
+  const matchesState = (row) => !selectedStates.size ||
+    [...selectedStates].some((state) => entityStatuses(row, hass?.states)[state]);
   const devices = new Map(data.devices.map((row) => [row.id, row]));
   const entities = new Map();
   const counts = new Map();
   const orphans = [];
   for (const row of data.entities) {
     if (row.device_id) counts.set(row.device_id, (counts.get(row.device_id) ?? 0) + 1);
-    if (!inScope(row)) continue;
+    if (!inScope(row) || !matchesState(row)) continue;
     const device = devices.get(row.device_id);
     if (!device) {
       if (matches(row)) orphans.push(row);
@@ -35,13 +67,19 @@ export function visibleRows(data, { integration, query, expanded, sort }) {
   const result = [];
   for (const row of [...devices.values()].sort(compare)) {
     const children = entities.get(row.id) || [];
+    if (selectedStates.size && !children.length) continue;
     if ((!inScope(row) || !matches(row)) && !children.length) continue;
-    result.push({ ...row, children: children.length, entityCount: counts.get(row.id) ?? 0, editable: inScope(row) });
-    if (expanded.has(row.id) || words.length) result.push(...children.sort(compare));
+    result.push({ ...row, children: children.length, entityCount: counts.get(row.id) ?? 0,
+      editable: inScope(row) && !row.readonly });
+    if (expanded.has(row.id) || words.length || selectedStates.size) result.push(...children.sort(compare).map((child) => ({
+      ...child, editable: !child.readonly,
+    })));
   }
   if (orphans.length) {
     result.push({ kind: "group", id: "orphans", children: orphans.length });
-    if (expanded.has("orphans") || words.length) result.push(...orphans.sort(compare));
+    if (expanded.has("orphans") || words.length || selectedStates.size) result.push(...orphans.sort(compare).map((row) => ({
+      ...row, editable: !row.readonly,
+    })));
   }
   return result;
 }
