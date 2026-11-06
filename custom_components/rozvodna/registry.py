@@ -70,8 +70,10 @@ class Registry:
             "devices": [self._describe_device(entry)
                         for entry in chain(self.devices.devices, self.devices.child_devices)],
             "entities": [self._describe_entity(entry) for entry in self.entities.entities.values()],
-            "areas": [{"id": item.id, "name": item.name} for item in self.areas.areas.values()],
-            "labels": [{"id": item.label_id, "name": item.name} for item in self.labels.labels.values()],
+            "areas": [{"id": item.id, "name": item.name, "icon": item.icon}
+                      for item in self.areas.areas.values()],
+            "labels": [{"id": item.label_id, "name": item.name, "icon": item.icon, "color": item.color}
+                       for item in self.labels.labels.values()],
         }
 
     def target(self, kind, object_id):

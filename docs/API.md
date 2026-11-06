@@ -19,7 +19,7 @@ Objekt registra má `kind`, `id`, `title`, `original_name`, `effective_area`,
 `inherited_labels`, `integration`, `config_entry`, `config_title`,
 `subentry`, `subentry_title` a mapu `values`. Zariadenie môže mať
 `parent_device_id` a `via_device_id`, entita `device_id`, `original_icon`
-a `has_entity_name`. Oblasti a štítky majú `id` a `name`.
+a `has_entity_name`. Oblasti a štítky majú `id`, `name` a `icon`. Štítky majú aj `color`.
 
 Návrh má `kind` (`device` alebo `entity`), `object_id` (stabilné ID z
 registrov), `field`, `before` a `after`. Hodnoty sú reťazec, `null` alebo

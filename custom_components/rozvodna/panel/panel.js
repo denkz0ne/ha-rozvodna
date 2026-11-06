@@ -1,7 +1,8 @@
 import { fields, key, same } from "./model.js";
 import { grid, finishEdit, navigate, rowKey, startEdit } from "./grid.js";
 import { bulk, history, preview, review } from "./views.js";
-import { button, esc, option } from "./html.js";
+import { button, esc, icon } from "./html.js";
+import { filters, toolbar } from "./toolbar.js";
 import { language } from "./strings.js";
 import styles from "./styles.js";
 
@@ -15,6 +16,7 @@ class RozvodnaPanel extends HTMLElement {
     Object.assign(this, {
       view: "registry", integration: "", query: "", sort: 1, page: 0, generation: 0,
       expanded: new Set(), selected: new Set(), working: new Map(), errors: new Map(),
+      filtersOpen: window.matchMedia("(min-width: 871px)").matches, filterQuery: "",
       objects: new Map(), unsubscribers: [], t: language(),
       historyRows: [], historyFilter: {}, historyOffset: 0,
     });
@@ -22,12 +24,15 @@ class RozvodnaPanel extends HTMLElement {
   }
 
   connectedCallback() {
-    this.shadowRoot.innerHTML = `<style>${styles}</style><main><header></header><div class="toolbar"></div>
-      <div class="body"></div><footer></footer></main>`;
+    this.shadowRoot.innerHTML = `<style>${styles}</style><main><header></header><div class="selection-bar" hidden></div>
+      <div class="toolbar registry-toolbar"></div><div class="content"><aside id="registry-filters" hidden></aside>
+      <div class="body"></div></div><footer></footer></main>`;
     const root = this.shadowRoot;
     this.header = root.querySelector("header");
     this.toolbar = root.querySelector(".toolbar");
     this.body = root.querySelector(".body");
+    this.sidebar = root.querySelector("aside");
+    this.selectionBar = root.querySelector(".selection-bar");
     this.footer = root.querySelector("footer");
     this.listeners = new AbortController();
     const options = { signal: this.listeners.signal };
@@ -49,6 +54,7 @@ class RozvodnaPanel extends HTMLElement {
   disconnectedCallback() {
     document.removeEventListener("pointerdown", this.outside, true);
     this.listeners.abort();
+    this.editor?.dispose?.();
     this.generation++;
     this.editor = null;
     this.unsubscribe();
@@ -63,6 +69,7 @@ class RozvodnaPanel extends HTMLElement {
     if (identityChanged) {
       this.unsubscribe();
       this.generation++;
+      this.editor?.dispose?.();
       this.data = this.editor = this.historyDetail = this.baseline = null;
       this.view = "registry";
       this.working.clear();
@@ -129,6 +136,10 @@ class RozvodnaPanel extends HTMLElement {
     this.data = data;
     this.setWorkspace(state);
     this.objects = new Map([...data.devices, ...data.entities].map((row) => [rowKey(row), row]));
+    this.metadata = {
+      area_id: new Map(data.areas.map((item) => [item.id, item])),
+      labels: new Map(data.labels.map((item) => [item.id, item])),
+    };
     this.options = {
       area_id: new Map(data.areas.map(({ id, name }) => [id, name])),
       labels: new Map(data.labels.map(({ id, name }) => [id, name])),
@@ -181,9 +192,14 @@ class RozvodnaPanel extends HTMLElement {
     return value;
   }
 
+  integrationTitle(domain) {
+    return this.hass?.localize?.("component." + domain + ".title") || domain;
+  }
+
   render(quiet = false) {
     this.renderHeader();
-    if (!quiet || !this.toolbar.querySelector("select")) this.renderToolbar();
+    if (!quiet || this.shadowRoot.activeElement?.type !== "search") this.renderToolbar();
+    this.renderSelection();
     this.renderBody();
     this.renderFooter();
   }
@@ -191,24 +207,31 @@ class RozvodnaPanel extends HTMLElement {
   renderHeader() {
     const { t, view } = this;
     this.header.innerHTML = (this._narrow ? "<ha-menu-button></ha-menu-button>" : "") +
-      `<img src="${new URL("./mark.svg", import.meta.url)}" alt="" width="26" height="26"><strong>Rozvodňa</strong>` +
-      button("registry", t.registry, `aria-current="${view === "registry"}"`) +
+      "<strong>Rozvodňa</strong>" + '<nav class="pane-tabs">' +
+      button("registry", t.registry, `aria-current="${view !== "history"}"`) +
       button("history", t.history, `aria-current="${view === "history"}"`) +
-      '<span class="spacer"></span>' + button("refresh", t.refresh);
+      '</nav><span class="spacer"></span>' +
+      button("refresh", icon("refresh"), `class="icon-button" aria-label="${t.refresh}" title="${t.refresh}"`);
     const menu = this.header.querySelector("ha-menu-button");
     if (menu) { menu.hass = this.hass; menu.narrow = this._narrow; }
   }
 
   renderToolbar() {
-    const { t, data, selected } = this;
-    this.toolbar.hidden = this.view !== "registry" || !data;
-    if (this.toolbar.hidden) { this.toolbar.innerHTML = ""; return; }
-    const integrations = [...new Set([...data.devices, ...data.entities].map((row) => row.integration))].sort();
-    this.toolbar.innerHTML = `<label>${t.integration}<select data-input="integration">${option("", t.all)}
-      ${integrations.map((name) => option(name, name, this.integration === name)).join("")}</select></label>
-      <input type="search" data-input="search" aria-label="${t.search}" placeholder="${t.search}" value="${esc(this.query)}">
-      ${button("sort", this.sort === 1 ? t.up : t.down)}<span class="spacer"></span>
-      ${button("bulk", t.bulk + " (" + selected.size + ")", selected.size ? "" : "disabled")}`;
+    const visible = this.view === "registry" && Boolean(this.data);
+    this.toolbar.hidden = !visible;
+    this.sidebar.hidden = !visible || !this.filtersOpen;
+    this.toolbar.classList.toggle("has-filters", visible && this.filtersOpen);
+    this.toolbar.innerHTML = visible ? toolbar(this) : "";
+    this.sidebar.innerHTML = visible && this.filtersOpen ? filters(this) : "";
+  }
+
+  renderSelection() {
+    const { t, selected } = this;
+    this.selectionBar.hidden = this.view !== "registry" || !selected.size;
+    this.selectionBar.innerHTML = this.selectionBar.hidden ? "" :
+      button("clear-selection", icon("close"), `class="icon-button" aria-label="${t.clear_selection}"`) +
+      `<span>${t.selected} ${selected.size}</span><span class="spacer"></span>` +
+      button("bulk", icon("playlist-edit") + t.bulk + " (" + selected.size + ")");
   }
 
   renderBody() {
@@ -246,7 +269,13 @@ class RozvodnaPanel extends HTMLElement {
   }
 
   input(event) {
-    if (event.target.dataset.input === "search") {
+    if (event.target.dataset.input === "filter-search") {
+      this.filterQuery = event.target.value;
+      const query = this.filterQuery.toLocaleLowerCase().trim();
+      for (const item of this.sidebar.querySelectorAll("[data-filter-item]")) {
+        item.hidden = Boolean(item.querySelector("input").value) && !item.dataset.filterItem.includes(query);
+      }
+    } else if (event.target.dataset.input === "search") {
       this.query = event.target.value;
       this.page = this.body.scrollTop = 0;
       this.renderBody();
@@ -256,14 +285,22 @@ class RozvodnaPanel extends HTMLElement {
   change(event) {
     const input = event.target;
     switch (input.dataset.input) {
+      case "sort":
+        this.sort = Number(input.value);
+        this.page = this.body.scrollTop = 0;
+        this.renderBody();
+        break;
       case "integration":
         if (this.working.size && !window.confirm(this.t.discard_dirty)) {
-          input.value = this.integration;
+          const current = [...this.sidebar.querySelectorAll('input[name="integration"]')]
+            .find((option) => option.value === this.integration);
+          if (current) current.checked = true;
           return;
         }
         this.working.clear();
         this.selected.clear();
         this.integration = input.value;
+        if (window.matchMedia("(max-width: 870px)").matches) this.filtersOpen = false;
         this.page = this.body.scrollTop = 0;
         this.render();
         break;
@@ -271,9 +308,8 @@ class RozvodnaPanel extends HTMLElement {
         const row = this.rows[Number(input.closest("tr").dataset.row)];
         if (input.checked) this.selected.add(rowKey(row));
         else this.selected.delete(rowKey(row));
-        const control = this.toolbar.querySelector('[data-action="bulk"]');
-        control.textContent = this.t.bulk + " (" + this.selected.size + ")";
-        control.disabled = !this.selected.size;
+        input.closest("tr").setAttribute("aria-selected", String(input.checked));
+        this.renderSelection();
         break;
       }
       case "history-field":
@@ -301,13 +337,26 @@ class RozvodnaPanel extends HTMLElement {
     if (!target || target.disabled || this.busy || !this.hass?.user?.is_admin) return;
     const field = target.closest("td")?.dataset.field;
     const row = this.rows?.[Number(target.closest("tr")?.dataset.row)];
-    if (this.editor && !finishEdit(this)) return;
     const action = target.dataset.action;
+    const closePicker = action === "edit" && this.editor?.td === target.closest("td") &&
+      this.editor.control.matches("[popover]");
+    if (this.editor && !finishEdit(this, false, null, closePicker)) return;
+    if (closePicker) return;
     switch (action) {
       case "edit": startEdit(this, row, field); break;
       case "expand":
         if (this.expanded.has(row.id)) this.expanded.delete(row.id);
         else this.expanded.add(row.id);
+        this.renderBody();
+        break;
+      case "filters":
+        this.filtersOpen = !this.filtersOpen;
+        this.renderToolbar();
+        this.toolbar.querySelector('[data-action="filters"]').focus();
+        break;
+      case "clear-selection":
+        this.selected.clear();
+        this.renderSelection();
         this.renderBody();
         break;
       case "sort":

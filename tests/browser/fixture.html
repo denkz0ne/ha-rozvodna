@@ -16,7 +16,8 @@ const data = {
   devices: [device("z", "ZB50 Predsieň", "zha"), device("e", "ESP80 Meteo", "esphome")],
   entities: [entity("light", "Svetlo", "zha", "z"), entity("link", "Kvalita spojenia", "zha", "z"),
     entity("temp", "Teplota", "esphome", "e"), entity("orphan", "Počasie", "template", null)],
-  areas: [{ id: "hall", name: "Predsieň" }], labels: [{ id: "test", name: "Testovací" }],
+  areas: [{ id: "hall", name: "Predsieň", icon: "mdi:door" }],
+  labels: [{ id: "test", name: "Testovací", icon: "mdi:tag", color: "#00bcd4" }],
 };
 const params = new URLSearchParams(location.search);
 if (params.has("large")) {

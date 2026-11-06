@@ -1,4 +1,7 @@
 const sk = {
+  filters: "Filtre", sort: "Zoradenie", integrations: "Integrácie", find: "Hľadať", find_integration: "Hľadať integráciu",
+  selected: "Vybrané", clear_selection: "Zrušiť výber",
+  entity_count: (count) => count + (count === 1 ? " entita" : count >= 2 && count <= 4 ? " entity" : " entít"),
   registry: "Register", history: "História", refresh: "Obnoviť", search: "Hľadať zariadenie alebo entitu",
   integration: "Integrácia", all: "Všetky integrácie", object: "Zariadenie / entita", name: "Vlastný názov",
   entity_id: "ID entity", area_id: "Oblasť", labels: "Štítky", icon: "Ikona", hidden_by: "Skrytie",
@@ -39,6 +42,9 @@ const sk = {
   enabled_note: "Povolenie entity sa môže prejaviť po opätovnom načítaní integrácie alebo po reštarte HA.",
 };
 const en = {
+  filters: "Filters", sort: "Sort order", integrations: "Integrations", find: "Search", find_integration: "Search integrations",
+  selected: "Selected", clear_selection: "Clear selection",
+  entity_count: (count) => count + (count === 1 ? " entity" : " entities"),
   registry: "Registry", history: "History", refresh: "Refresh", search: "Search devices or entities",
   integration: "Integration", all: "All integrations", object: "Device / entity", name: "Custom name",
   entity_id: "Entity ID", area_id: "Area", labels: "Labels", icon: "Icon", hidden_by: "Hidden",

@@ -18,8 +18,10 @@ export function visibleRows(data, { integration, query, expanded, sort }) {
   };
   const devices = new Map(data.devices.map((row) => [row.id, row]));
   const entities = new Map();
+  const counts = new Map();
   const orphans = [];
   for (const row of data.entities) {
+    if (row.device_id) counts.set(row.device_id, (counts.get(row.device_id) ?? 0) + 1);
     if (!inScope(row)) continue;
     const device = devices.get(row.device_id);
     if (!device) {
@@ -34,7 +36,7 @@ export function visibleRows(data, { integration, query, expanded, sort }) {
   for (const row of [...devices.values()].sort(compare)) {
     const children = entities.get(row.id) || [];
     if ((!inScope(row) || !matches(row)) && !children.length) continue;
-    result.push({ ...row, children: children.length, editable: inScope(row) });
+    result.push({ ...row, children: children.length, entityCount: counts.get(row.id) ?? 0, editable: inScope(row) });
     if (expanded.has(row.id) || words.length) result.push(...children.sort(compare));
   }
   if (orphans.length) {

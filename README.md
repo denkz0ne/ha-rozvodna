@@ -6,9 +6,9 @@ a globálne **Uložiť** zapíše potvrdené návrhy zo všetkých integrácií.
 
 **Verzia 0.1.0-alpha · Home Assistant Core 2026.11 · MIT**
 
-![Panel Rozvodne v prehliadačovom teste](docs/images/panel-preview.png)
+![Panel Rozvodne v Home Assistante](docs/images/panel-preview.png)
 
-Náhľad z prehliadačového testu zobrazuje syntetické záznamy.
+Náhľad z izolovanej inštancie Home Assistanta zobrazuje testovacie záznamy.
 
 ## Inštalácia cez Marketplace
 
@@ -26,8 +26,8 @@ do `<config>/custom_components/` a pokračuj reštartom a pridaním integrácie.
 
 ## Práca s registrom
 
-1. Vyber integráciu a podľa potreby rozbaľ entity. Kliknutím na bunku otvoríš
-   editor. Enter prejde na ďalší viditeľný riadok a Tab na ďalšie pole.
+1. Vyber integráciu a podľa potreby rozbaľ entity. Kliknutím na názov v prvom stĺpci
+   otvoríš editor. Oblasti a štítky vyberáš v ponuke nad tabuľkou. Enter prejde na ďalší viditeľný riadok a Tab na ďalšie pole.
    Shift otočí smer. Esc obnoví hodnotu pred otvorením editora.
 2. Oranžový návrh potvrď fajkou na konci daného riadka. Zelené návrhy
    prežijú obnovenie stránky a nájdeš ich cez **Skontrolovať potvrdené**.

@@ -73,8 +73,8 @@ async def smoke(folder):
                                                    identifiers={("rozvodna", "child")}, name="Child")
         entity = entities.async_get_or_create("sensor", "rozvodna", "test-entity", config_entry=entry,
                                               device_id=child.id, original_name="Test", has_entity_name=True)
-        area = ar.async_get(hass).async_create("Test Area")
-        label = lr.async_get(hass).async_create("Test Label")
+        area = ar.async_get(hass).async_create("Test Area", icon="mdi:door")
+        label = lr.async_get(hass).async_create("Test Label", icon="mdi:tag", color="#00bcd4")
         admin = await token(hass, "Admin", GROUP_ID_ADMIN)
         regular = await token(hass, "Viewer", GROUP_ID_USER)
         async with ClientSession() as session:
@@ -93,8 +93,10 @@ async def smoke(folder):
                 children = [row for row in snapshot["devices"] if row["id"] == child.id]
                 assert children and children[0]["parent_device_id"] == device.id, snapshot
                 assert any(row["id"] == entity.id for row in snapshot["entities"])
-                assert snapshot["areas"][0]["id"] == area.id, snapshot
-                assert snapshot["labels"][0]["id"] == label.label_id, snapshot
+                assert snapshot["areas"][0] == {"id": area.id, "name": area.name, "icon": "mdi:door"}
+                assert snapshot["labels"][0] == {
+                    "id": label.label_id, "name": label.name, "icon": "mdi:tag", "color": "#00bcd4"
+                }
                 initial = (await ws("rozvodna/baseline"))["snapshot"]
                 assert all(row["id"] != entity.id for row in initial["entities"])
                 state = await ws("rozvodna/stage", revision=0, changes=[

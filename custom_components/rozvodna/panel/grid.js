@@ -1,8 +1,16 @@
 import { fields, canEdit, key, same, nextCell, visibleRows } from "./model.js";
-import { button, esc, icon, option, table } from "./html.js";
+import { button, esc, icon, option, registryIcon, table } from "./html.js";
+import { labelChip, makePicker, navigatePicker, openPicker } from "./picker.js";
 
-export const PAGE_SIZE = 100;
+const PAGE_SIZE = 100;
+const ENTITY_ICONS = {
+  binary_sensor: "checkbox-marked-circle-outline", button: "gesture-tap-button",
+  light: "lightbulb", media_player: "speaker", sensor: "eye", switch: "toggle-switch-variant",
+  update: "package-up", select: "format-list-bulleted", number: "numeric", fan: "fan",
+  cover: "window-shutter", climate: "thermostat", camera: "camera", lock: "lock",
+};
 export const rowKey = (row) => key(row, "");
+const isDirty = (panel, row) => fields.some((field) => panel.working.has(key(row, field)));
 
 export function grid(panel) {
   const { data, t, expanded, selected, query } = panel;
@@ -12,39 +20,59 @@ export function grid(panel) {
   panel.rows = all.slice(panel.page * PAGE_SIZE, (panel.page + 1) * PAGE_SIZE);
   const rows = panel.rows.map((row, index) => {
     const open = expanded.has(row.id) || !!query.trim();
-    const toggle = row.children ? button("expand", open ? "▾" : "▸",
-      `class="icon-button" aria-label="${t.expand}" aria-expanded="${open}"`) : "";
-    if (!row.values) return `<tr class="group" data-row="${index}"><td>${toggle}</td>
-      <td colspan="9">${t.orphans} (${row.children})</td></tr>`;
+    const toggle = row.children ? button("expand", icon(open ? "chevron-up" : "chevron-down"),
+      `class="icon-button" aria-label="${t.expand}" aria-expanded="${open}" ${query.trim() ? "disabled" : ""}`) : "";
+    if (!row.values) return `<tr class="group" data-row="${index}"><td class="toggle">${toggle}</td>
+      <th scope="row" colspan="8">${t.orphans} (${row.children})</th></tr>`;
     const editable = row.editable !== false;
+    const checked = selected.has(rowKey(row));
     const check = editable ? `<input type="checkbox" data-input="select" aria-label="${t.select} ${esc(row.title)}"
-      ${selected.has(rowKey(row)) ? "checked" : ""}>` : "";
-    const context = [row.integration, row.config_title, row.subentry_title].filter(Boolean).join(" · ");
-    const storedIcon = row.values.icon ?? row.original_icon;
-    const objectIcon = row.kind === "device" ? (row.parent_device_id ? "source-branch" : "devices") :
-      /^mdi:[a-z0-9_-]+$/.test(storedIcon ?? "") ? storedIcon.slice(4) : "shape-outline";
-    return `<tr class="${row.kind}" data-row="${index}"><td class="toggle">${check}${toggle}</td>
-      <td class="object"><div>${icon(objectIcon)}<span title="${esc(row.title)}"><span class="row-title">${esc(row.title)}</span>
-      <small title="${esc(context)}">${esc(context)}</small></span></div></td>
-      ${fields.map((field) => cell(panel, row, field, editable)).join("")}<td>
-      ${button("stage", "✓", `class="icon-button" aria-label="${t.stage}" title="${t.stage}" ${editable && isDirty(panel, row) ? "" : "disabled"}`)}
+      ${checked ? "checked" : ""}>` : "";
+    return `<tr class="${row.kind}${row.device_id ? " nested" : ""}" data-row="${index}"
+      data-object-id="${esc(row.id)}" aria-selected="${checked}"><td class="toggle">${check}${toggle}</td>
+      ${fields.map((field) => cell(panel, row, field, editable)).join("")}<td class="actions">
+      ${button("stage", icon("check"), `class="icon-button" aria-label="${t.stage}" title="${t.stage}" ${editable && isDirty(panel, row) ? "" : "disabled"}`)}
       ${button("object-history", icon("history"), `class="icon-button" aria-label="${t.by_object}" title="${t.by_object}"`)}</td></tr>`;
   });
-  if (!rows.length) rows.push(`<tr><td colspan="10">${t.empty_rows}</td></tr>`);
-  return table(t, ["", "object", ...fields, "actions"], rows) + (pages > 1 ? `<div class="toolbar">
-    ${button("prev-page", t.prev, panel.page === 0 ? "disabled" : "")} ${panel.page + 1} / ${pages}
-    ${button("next-page", t.next, panel.page + 1 === pages ? "disabled" : "")}</div>` : "");
+  if (!rows.length) rows.push(`<tr><td colspan="9">${t.empty_rows}</td></tr>`);
+  const headings = ["", "object", ...fields.slice(1), "actions"];
+  const sort = panel.sort === 1 ? "ascending" : "descending";
+  const orderIcon = icon(panel.sort === 1 ? "arrow-up" : "arrow-down");
+  return table(t, headings, rows, {
+    object: `<th scope="col" aria-sort="${sort}">${button("sort", orderIcon + t.object, 'class="sort-heading"')}</th>`,
+  }) + (pages > 1 ? `<div class="pagination">
+    ${button("prev-page", icon("chevron-left"), `class="icon-button" aria-label="${t.prev}" ${panel.page === 0 ? "disabled" : ""}`)}
+    ${panel.page + 1} / ${pages}
+    ${button("next-page", icon("chevron-right"), `class="icon-button" aria-label="${t.next}" ${panel.page + 1 === pages ? "disabled" : ""}`)}</div>` : "");
 }
 
-const isDirty = (panel, row) => fields.some((field) => panel.working.has(key(row, field)));
+function nameContent(panel, row, title) {
+  const count = row.kind === "device" ? panel.t.entity_count(row.entityCount) : "";
+  const integration = !panel.integration ? panel.integrationTitle(row.integration) : "";
+  const context = [count, integration].filter(Boolean).join(" · ");
+  const domain = row.values.entity_id?.split(".")[0];
+  const symbol = row.kind === "device" ? icon(row.parent_device_id ? "source-branch" : "devices") :
+    registryIcon(panel.value(row, "icon") ?? row.original_icon ??
+      panel.hass?.states?.[row.values.entity_id]?.attributes?.icon, ENTITY_ICONS[domain] ?? "shape-outline");
+  return symbol + `<span class="object-text"><span class="row-title">${esc(title)}</span>
+    ${context ? `<small class="object-meta">${esc(context)}</small>` : ""}</span>`;
+}
 
 function cell(panel, row, field, editable) {
   if (!Object.hasOwn(row.values, field)) return "<td></td>";
   const id = key(row, field);
   const draft = panel.working.get(id);
   const staged = panel.staged.get(id);
-  const text = panel.describe(field, panel.value(row, field), draft || staged ? undefined : row);
-  if (!editable || !canEdit(row, field)) return `<td class="muted">${esc(text)}</td>`;
+  const value = panel.value(row, field);
+  const text = field === "name" ? (draft || staged ? value ?? row.original_name ?? row.title : row.title) :
+    panel.describe(field, value, draft || staged ? undefined : row);
+  const area = field === "area_id" ? panel.metadata.area_id.get(value ?? (!draft && !staged ? row.effective_area : null)) : null;
+  const content = field === "name" ? nameContent(panel, row, text) :
+    field === "labels" && value.length ? `<span class="labels">${value.map((id) =>
+      labelChip(panel.metadata.labels.get(id) ?? { name: id })).join("")}</span>` :
+    `<span class="value">${area ? registryIcon(area.icon, "floor-plan") : ""}${esc(text)}</span>`;
+  const css = field === "name" ? "object " : "";
+  if (!editable || !canEdit(row, field)) return `<td class="${css}muted">${content}</td>`;
   const issue = panel.issues.get(id) ?? panel.errors.get(id) ??
     (draft && !same(draft.before, row.values[field]) ? "changed" : null);
   const state = issue ? "conflict" : draft ? "dirty" : staged ? "staged" : "";
@@ -53,9 +81,10 @@ function cell(panel, row, field, editable) {
     field === "labels" ? row.inherited_labels.map((label) => panel.options.labels.get(label) ?? label).join(", ") : null;
   const hint = [t[field], text, state && t[state], issue && (t[issue] ?? issue),
     extra && ((field === "labels" ? t.inherited : t.original) + " " + extra)].filter(Boolean).join(" · ");
-  const marker = state ? `<span aria-hidden="true">${{ dirty: "✎", staged: "✓", conflict: "!" }[state]}</span>` : "";
-  return `<td class="editable" data-field="${field}">${button("edit", marker + `<span class="value">${esc(text)}</span>`,
-    `class="cell ${state}" aria-label="${esc(hint)}" title="${esc(hint)}"`)}</td>`;
+  const marker = state ? `<span class="cell-state">${icon({ dirty: "pencil-outline", staged: "check", conflict: "alert-circle" }[state])}</span>` : "";
+  const picker = field === "area_id" || field === "labels";
+  return `<td class="${css}editable" data-field="${field}">${button("edit", content + marker,
+    `class="cell ${state}" aria-label="${esc(hint)}" title="${esc(hint)}" ${picker ? 'aria-expanded="false"' : ""}`)}</td>`;
 }
 
 export function startEdit(panel, row, field) {
@@ -64,54 +93,46 @@ export function startEdit(panel, row, field) {
   if (!td) return;
   const value = panel.value(row, field);
   const { t } = panel;
+  const picker = field === "area_id" || field === "labels";
   let control;
-  if (field === "labels") {
-    control = document.createElement("div");
-    control.className = "editor-pop";
-    control.tabIndex = -1;
-    control.setAttribute("role", "group");
-    const options = new Map(panel.options.labels);
-    for (const id of value) if (!options.has(id)) options.set(id, id);
-    for (const [id, name] of options) {
-      const label = document.createElement("label");
-      const check = document.createElement("input");
-      check.type = "checkbox";
-      check.value = id;
-      check.checked = value.includes(id);
-      label.append(check, name);
-      control.append(label);
-    }
-    const rect = td.getBoundingClientRect();
-    control.style.left = Math.max(0, Math.min(rect.left, window.innerWidth - 220)) + "px";
-    control.style.top = Math.max(0, Math.min(rect.bottom, window.innerHeight - 240)) + "px";
-  } else if (field === "area_id" || field.endsWith("_by")) {
+  if (picker) {
+    control = makePicker(panel, field, value, (choice) => {
+      control.value = choice;
+      finishEdit(panel, false, null, true);
+    });
+  } else if (field.endsWith("_by")) {
     control = document.createElement("select");
     control.className = "editor";
-    const choices = new Map(field === "area_id" ? panel.options.area_id : [["user", t.yes]]);
-    if (value !== null && !choices.has(value)) choices.set(value, value);
-    control.size = Math.min(5, Math.max(2, choices.size + 1));
-    control.innerHTML = option("", field === "area_id" ? t.none : t.no, value === null) +
-      [...choices].map(([id, name]) => option(id, name, id === value)).join("");
+    control.innerHTML = option("", t.no, value === null) + option("user", t.yes, value === "user");
   } else {
     control = document.createElement("input");
     control.className = "editor";
     control.type = "text";
     control.placeholder = field === "entity_id" ? "" : t.automatic;
-    control.value = value ?? "";
+    control.value = value ?? (field === "name" ? row.title : "");
   }
   control.setAttribute("aria-label", t[field]);
-  panel.editor = { td, control, row, field, index };
-  td.replaceChildren(control);
-  control.focus();
-  if (control instanceof HTMLInputElement) control.select();
+  panel.editor = { td, control, row, field, index, value, initial: control.value };
+  if (picker) {
+    const anchor = td.querySelector("button");
+    anchor.setAttribute("aria-expanded", "true");
+    td.append(control);
+    panel.editor.dispose = openPicker(control, anchor);
+  } else {
+    td.replaceChildren(control);
+    control.focus();
+    if (control instanceof HTMLInputElement) control.select();
+  }
 }
 
-export function finishEdit(panel, cancel = false, next = null) {
+export function finishEdit(panel, cancel = false, next = null, restore = false) {
   if (!panel.editor) return true;
-  const { row, field, control, td } = panel.editor;
+  const { row, field, control, td, initial, dispose } = panel.editor;
   if (!cancel) {
-    const value = field === "labels" ? [...control.querySelectorAll("input:checked")].map((item) => item.value).sort() :
-      (control.value.trim() ? control.value : null);
+    const value = field === "labels" ?
+      [...control.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value).sort() :
+      field === "name" && control.value === initial ? panel.editor.value :
+      (control.value?.trim() ? control.value : null);
     const error = validate(row, field, value);
     if (error) {
       control.classList.add("invalid");
@@ -122,6 +143,7 @@ export function finishEdit(panel, cancel = false, next = null) {
     }
     panel.draft(row, field, value);
   }
+  dispose?.();
   panel.editor = null;
   const template = document.createElement("template");
   template.innerHTML = "<table><tbody><tr>" + cell(panel, row, field, true) + "</tr></tbody></table>";
@@ -129,7 +151,7 @@ export function finishEdit(panel, cancel = false, next = null) {
   td.closest("tr").querySelector('[data-action="stage"]').disabled = !isDirty(panel, row);
   panel.renderFooter();
   if (next) startEdit(panel, ...next);
-  else if (cancel) td.querySelector("button").focus();
+  else if (cancel || restore) td.querySelector("button").focus({ preventScroll: true });
   if (panel.refreshPending) panel.requestRefresh();
   return true;
 }
@@ -138,19 +160,20 @@ export function navigate(panel, event) {
   if (!panel.editor || event.isComposing) return;
   const { index, field, control } = panel.editor;
   if (!event.composedPath().includes(control)) return;
-  if (field === "labels" && ["ArrowDown", "ArrowUp"].includes(event.key)) {
-    const checks = [...control.querySelectorAll("input")];
-    if (!checks.length) return;
-    const from = checks.indexOf(event.target);
-    const next = from < 0 ? 0 : (from + (event.key === "ArrowDown" ? 1 : -1) + checks.length) % checks.length;
-    event.preventDefault();
-    checks[next].focus();
-    return;
-  }
+  if (control.matches("[popover]") && navigatePicker(control, event)) return;
   if (!["Escape", "Enter", "Tab"].includes(event.key)) return;
   event.preventDefault();
   if (event.key === "Escape") finishEdit(panel, true);
-  else finishEdit(panel, false, nextCell(panel.rows, index, field, event.key === "Tab", event.shiftKey));
+  else {
+    if (field === "area_id" && event.key === "Enter") {
+      const choice = event.target.closest("[data-choice]") ??
+        control.querySelector("[data-option]:not([hidden])");
+      if (choice && (event.target.matches("[data-choice]") || event.target.value.trim())) {
+        control.value = choice.dataset.choice || null;
+      }
+    }
+    finishEdit(panel, false, nextCell(panel.rows, index, field, event.key === "Tab", event.shiftKey), true);
+  }
 }
 
 export function validate(row, field, value) {
