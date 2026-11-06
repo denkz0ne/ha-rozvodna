@@ -32,9 +32,10 @@ async def async_setup_entry(hass, entry):
     from .database import Database
     from .engine import Engine
     from .registry import Registry
+    from .references import References
 
     db = Database(Path(hass.config.path("rozvodna", "registry.sqlite3")))
-    engine = Engine(db, Registry(hass), hass.async_add_executor_job)
+    engine = Engine(db, Registry(hass), hass.async_add_executor_job, References(hass))
     try:
         await engine.initialize()
     except OSError as error:
@@ -45,7 +46,7 @@ async def async_setup_entry(hass, entry):
         webcomponent_name="rozvodna-panel",
         sidebar_title="Rozvodňa",
         sidebar_icon="mdi:transmission-tower",
-        module_url=f"{ASSET_URL}/panel.js?v=0.1.0",
+        module_url=f"{ASSET_URL}/panel.js?v=0.2.0",
         require_admin=True,
         config_panel_domain=DOMAIN,
     )

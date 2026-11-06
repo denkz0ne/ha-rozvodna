@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0
+
+- Hromadná úprava oblasti, štítkov, skrytia a vypnutia; Shift výber rozsahu.
+- Pri hoveri sa zvýrazní iba názov a stavová ikona entity je zarovnaná o pozíciu doľava.
+- Pred zmenou ID sa kontrolujú odkazy v úložných dashboardoch, automatizáciách
+  a skriptoch. Presné odkazy v dashboardoch možno bezpečne opraviť cez HA API;
+  ostatné nálezy sa zobrazia na ručnú kontrolu.
+- Opravy dashboardov sa zapisujú spolu s premenovaním do histórie a dajú sa
+  vrátiť spoločne. Pridané sú testy a dokumentácia bezpečnostných obmedzení.
+
 ## 0.1.0
 
 - Prvé stabilné vydanie pre Home Assistant Core 2026.11.

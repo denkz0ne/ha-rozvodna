@@ -21,7 +21,10 @@ def register_commands(hass):
         "state": ({}, state),
         "stage": ({**REVISION, p.Required("changes"): [CHANGE], p.Optional("drop"): [KEY]}, stage),
         "commit": ({**REVISION, p.Optional("message"): p.All(str, p.Length(max=255)),
-                    p.Optional("acknowledge_rename"): bool}, commit),
+                    p.Optional("acknowledge_rename"): bool,
+                    p.Optional("reference_token"): str,
+                    p.Optional("reference_ids"): [str]}, commit),
+        "references": ({**REVISION}, references),
         "history": ({p.Optional("kind"): p.In(FIELDS), p.Optional("object_id"): str,
                      p.Optional("field"): str, p.Optional("offset"): p.All(int, p.Range(min=0))}, history),
         "detail": ({p.Required("commit_id"): str}, detail),
@@ -71,10 +74,16 @@ async def commit(engine, user, msg, hass):
             raise Problem("stale_revision")
         if any(item["field"] == "entity_id" for item in workspace["changes"]):
             raise Problem("rename_confirmation_required")
-    task = hass.async_create_task(engine.commit(user, msg["revision"], msg.get("message")),
+    task = hass.async_create_task(engine.commit(
+        user, msg["revision"], msg.get("message"),
+        msg.get("reference_token"), msg.get("reference_ids", ())),
                                   "Rozvodňa registry commit")
     # Closing a WebSocket does not abort an accepted write.
     return await asyncio.shield(task)
+
+
+async def references(engine, user, msg, hass):
+    return await engine.preview_references(user, msg["revision"])
 
 
 async def history(engine, user, msg, hass):

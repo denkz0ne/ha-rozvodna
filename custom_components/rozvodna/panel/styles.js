@@ -154,6 +154,20 @@ section td { padding-block: 6px; }
 section label { display: inline-flex; align-items: center; gap: 5px; margin: 4px; }
 section .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0; }
 code { overflow-wrap: anywhere; }
+.reference-dialog { width: min(680px, calc(100vw - 32px)); max-width: 680px; max-height: min(82vh, 760px); padding: 0;
+  color: var(--primary-text-color, #212121); background: var(--card-background-color, #fff);
+  border: 1px solid var(--outline-color, var(--divider-color, #ddd)); border-radius: var(--ha-border-radius-lg, 12px);
+  box-shadow: var(--ha-card-box-shadow, 0 8px 28px #0004); }
+.reference-dialog::backdrop { background: #0006; }
+.reference-dialog section { max-height: min(82vh, 760px); overflow: auto; padding: 20px; }
+.reference-dialog h3 { margin: 18px 0 6px; font-size: var(--ha-font-size-m, 14px); font-weight: var(--ha-font-weight-medium, 500); }
+.reference-match { display: flex; align-items: flex-start; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--divider-color, #ddd); }
+.reference-match span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.reference-match small, .reference-list small { display: block; color: var(--secondary-text-color, #606060); overflow-wrap: anywhere; }
+.reference-list { margin: 0; padding-inline-start: 22px; }
+.reference-list li { padding: 6px 0; }
+.reference-coverage { padding: 10px; border-radius: var(--ha-border-radius-md, 8px); background: var(--secondary-background-color, #f5f5f5); }
+.reference-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 @media (max-width: 870px) {
   .registry-toolbar.has-filters .filter-heading { width: auto; background: var(--surface); border: 0; }
   aside { position: absolute; z-index: 2; inset-inline-start: 0; top: 0; bottom: 0; box-shadow: 0 2px 8px #0002; }

@@ -6,12 +6,15 @@ from dataclasses import asdict, dataclass
 import logging
 import re
 
+from .references import ReferenceConflict, ReferenceLimit
+
 _LOGGER = logging.getLogger(__name__)
 ENTITY_ID = re.compile(r"(?!.*?__[^.]*\.)[a-z0-9](?:[a-z0-9_]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9_]*[a-z0-9])?")
 ICON = re.compile(r"[a-z0-9_-]+:[a-z0-9_-]+")
 FIELDS = {
     "device": {"name", "area_id", "labels"},
     "entity": {"name", "entity_id", "area_id", "labels", "icon", "hidden_by", "disabled_by"},
+    "reference": {"path"},
 }
 FLAGS = {"hidden_by", "disabled_by"}
 MAX_CHANGES = 5000
@@ -36,15 +39,18 @@ class Operation:
 
 
 class Engine:
-    def __init__(self, db, registry, executor):
+    def __init__(self, db, registry, executor, references=None):
         self.db = db
         self.registry = registry
+        self.references = references
         self.execute = executor
         self.lock = asyncio.Lock()
         self.active = True
 
     async def initialize(self):
         await self.execute(self.db.initialize, self.registry.snapshot())
+        if self.references:
+            await self.references.refresh()
 
     def _check_active(self):
         if not self.active:
@@ -58,6 +64,20 @@ class Engine:
         return {op.key: op for row in state["changes"] if (op := Operation(**row))}
 
     def _check(self, op):
+        if op.kind == "reference":
+            if (not self.references or not op.field.startswith("/")
+                    or not isinstance(op.before, str) or not isinstance(op.after, str)
+                    or not ENTITY_ID.fullmatch(op.before) or not ENTITY_ID.fullmatch(op.after)):
+                raise Problem("unsupported_field")
+            row = self.references.target(op.object_id, op.field)
+            if row is None:
+                raise Problem("missing_source")
+            if row["values"].get(op.field) != op.before:
+                raise Problem("changed")
+            if not self.references.is_static_reference(op.object_id, op.field, op.before):
+                raise Problem("unsupported_field")
+            return row
+
         row = self.registry.target(op.kind, op.object_id)
         if row is None:
             raise Problem("missing_object")
@@ -117,6 +137,8 @@ class Engine:
 
     async def stage(self, user, revision, changes, drop=()):
         async with self.lock:
+            if self.references and any(item.get("kind") == "reference" for item in changes):
+                await self.references.refresh()
             workspace = await self._workspace(user, revision)
             if len(changes) + len(drop) > MAX_CHANGES:
                 raise Problem("too_many_changes")
@@ -139,38 +161,99 @@ class Engine:
         issues, _ = self._plan(changes)
         return {"revision": revision + 1, "changes": [asdict(op) for op in changes], "issues": issues}
 
-    async def commit(self, user, revision, message):
+    async def preview_references(self, user, revision):
+        async with self.lock:
+            workspace = await self._workspace(user, revision)
+            renames = [op for op in workspace.values() if op.field == "entity_id"]
+            if not renames:
+                raise Problem("no_renames")
+            if not self.references:
+                return {"token": "", "matches": [], "coverage": {}}
+            try:
+                return await self.references.inspect(renames)
+            except ReferenceLimit as error:
+                raise Problem(str(error)) from error
+
+    async def commit(self, user, revision, message, reference_token=None, reference_ids=()):
         async with self.lock:
             workspace = await self._workspace(user, revision)
             if not workspace:
                 raise Problem("empty")
+            if self.references:
+                await self.references.refresh()
             issues, plan = self._plan(list(workspace.values()))
             if issues:
                 return {"status": "conflict", "issues": issues}
+            renames = [op for op in workspace.values() if op.field == "entity_id"]
+            reverting_references = any(op.kind == "reference" and op.source for op in workspace.values())
+            if renames and self.references and not reverting_references:
+                if not reference_token:
+                    raise Problem("reference_review_required")
+                try:
+                    report = await self.references.inspect(renames)
+                except ReferenceLimit as error:
+                    raise Problem(str(error)) from error
+                if report["token"] != reference_token:
+                    raise Problem("reference_conflict")
+                automatic = {item["id"]: item for item in report["matches"] if item["automatic"]}
+                selected = set(reference_ids)
+                if not selected.issubset(automatic):
+                    raise Problem("reference_selection_invalid")
+                for item in report["matches"]:
+                    if item["id"] not in selected:
+                        continue
+                    op = Operation("reference", item["source_id"], item["location"],
+                                   item["old"], item["new"])
+                    try:
+                        row = self._check(op)
+                    except Problem as error:
+                        raise Problem("reference_conflict") from error
+                    plan.append((op, row["title"], row["integration"]))
+            elif reference_ids or reference_token:
+                raise Problem("reference_selection_invalid")
             commit_id = await self.execute(self.db.begin, user, message, plan)
             saved = 0
+            failures = False
+            rename_results = {}
             for position, (op, _, _) in enumerate(plan):
                 await self.execute(self.db.applying, commit_id, position)
-                status, error = self._apply(op)
+                pair = (op.before, op.after)
+                if op.kind == "reference" and rename_results.get(pair) != "saved":
+                    status, error = "skipped", "rename_not_saved"
+                else:
+                    status, error = await self._apply(op)
                 await self.execute(self.db.outcome, commit_id, position, status, error)
+                if op.field == "entity_id":
+                    rename_results[pair] = status
                 if status == "saved":
                     saved += 1
-                    del workspace[op.key]
-            status = "saved" if not workspace else "partial" if saved else "error"
+                    workspace.pop(op.key, None)
+                else:
+                    failures = True
+            status = "saved" if not workspace and not failures else "partial" if saved else "error"
             await self.execute(self.db.finish, commit_id, status, user, revision + 1, list(workspace.values()))
             return await self.execute(self.db.detail, commit_id)
 
-    def _apply(self, op):
+    async def _apply(self, op):
         try:
             self._check(op)
         except Problem as error:
             return "conflict", str(error)
         try:
-            self.registry.apply(op)
-            updated = self.registry.target(op.kind, op.object_id)
+            if op.kind == "reference":
+                await self.references.apply(op)
+                updated = self.references.target(op.object_id, op.field)
+            else:
+                self.registry.apply(op)
+                updated = self.registry.target(op.kind, op.object_id)
             if updated is None or updated["values"].get(op.field) != op.after:
                 return "error", "unexpected_value"
-        except Exception:
+        except Exception as error:
+            if op.kind == "reference" and isinstance(error, ReferenceConflict):
+                return "conflict", str(error)
+            if op.kind == "reference":
+                _LOGGER.error("Rozvodňa could not update dashboard reference %s", op.key)
+                return "error", "reference_error"
             _LOGGER.exception("Rozvodňa registry update failed for %s", op.key)
             return "error", "registry_error"
         return "saved", None
@@ -186,12 +269,19 @@ class Engine:
 
     async def revert(self, user, revision, commit_id, positions):
         async with self.lock:
+            if self.references:
+                await self.references.refresh()
             workspace = await self._workspace(user, revision)
             detail = await self.detail(commit_id)
             operations = [op for op in detail["operations"] if op["status"] == "saved"
                           and (positions is None or op["position"] in positions)]
             if not operations or (positions is not None and {op["position"] for op in operations} != set(positions)):
                 raise Problem("empty_revert")
+            linked = {op["position"] for op in detail["operations"]
+                      if op["status"] == "saved" and (op["field"] == "entity_id" or op["kind"] == "reference")}
+            selected_linked = {op["position"] for op in operations} & linked
+            if selected_linked and selected_linked != linked:
+                raise Problem("dependent_revert")
             for item in operations:
                 op = Operation(item["kind"], item["object_id"], item["field"],
                                item["after"], item["before"], commit_id)

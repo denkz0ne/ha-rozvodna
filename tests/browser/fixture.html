@@ -75,6 +75,11 @@ if (params.has("features")) {
     states[`sensor.${id}`] = { state: "on", attributes: {} };
   }
 }
+if (params.has("references")) {
+  const automation = entity("automation_ref", "Test automation", "homeassistant", null);
+  automation.values.entity_id = "automation.test";
+  data.entities.push(automation);
+}
 if (params.has("large")) {
   for (let i = 0; i < 600; i++) {
     data.devices.push(device("d" + i, "Zariadenie " + i, "zha"));
@@ -100,8 +105,19 @@ document.querySelector("rozvodna-panel").hass = {
     window.requests.push(msg);
     let result;
     switch (msg.type) {
+      case "automation/config": result = { config: {
+        trigger: [{ platform: "state", entity_id: "sensor.light" }],
+        condition: [{ condition: "template", value_template: "{{ states('sensor.light') }}" }],
+      } }; break;
+      case "script/config": result = { config: { sequence: [{ action: "light.turn_on", target: { entity_id: "sensor.light" } }] } }; break;
       case "rozvodna/snapshot": result = data; break;
       case "rozvodna/state": result = state; break;
+      case "rozvodna/references": result = { token: "preview-token", coverage: {
+        dashboards: 1, automations: 1, scripts: 0, yaml_dashboards: 1,
+      }, matches: [
+        { id: "auto-ref", source_id: "dashboard:home", source_kind: "dashboard", source: "Dashboard · Domov",
+          location: "/views/0/cards/0/entity", old: "sensor.light", new: "sensor.new", automatic: true, reason: "" },
+      ] }; break;
       case "rozvodna/stage": {
         const changes = new Map(state.changes.map((op) => [opKey(op), op]));
         for (const op of msg.drop || []) changes.delete(opKey(op));
