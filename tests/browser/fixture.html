@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="sk"><meta charset="utf-8"><title>Rozvodňa UI test fixture</title>
+<style>html,body { height:100%; margin:0; }</style>
+<rozvodna-panel></rozvodna-panel>
+<script type="module" src="/custom_components/rozvodna/panel/panel.js"></script>
+<script type="module">
+const device = (id, title, integration) => ({
+  kind: "device", id, title, original_name: title, integration, config_title: title, inherited_labels: [],
+  values: { name: null, area_id: null, labels: [] },
+});
+const entity = (id, title, integration, device_id) => ({
+  kind: "entity", id, title, original_name: title, integration, device_id, inherited_labels: [],
+  values: { name: null, entity_id: "sensor." + id, area_id: null, labels: [], icon: null, hidden_by: null, disabled_by: null },
+});
+const data = {
+  devices: [device("z", "ZB50 Predsieň", "zha"), device("e", "ESP80 Meteo", "esphome")],
+  entities: [entity("light", "Svetlo", "zha", "z"), entity("link", "Kvalita spojenia", "zha", "z"),
+    entity("temp", "Teplota", "esphome", "e"), entity("orphan", "Počasie", "template", null)],
+  areas: [{ id: "hall", name: "Predsieň" }], labels: [{ id: "test", name: "Testovací" }],
+};
+const params = new URLSearchParams(location.search);
+if (params.has("large")) {
+  for (let i = 0; i < 600; i++) {
+    data.devices.push(device("d" + i, "Zariadenie " + i, "zha"));
+    for (let j = 0; j < 8; j++) data.entities.push(entity("e" + i + "_" + j, "Entita " + j, "zha", "d" + i));
+  }
+}
+if (params.has("dark")) {
+  const tokens = { "primary-text-color": "#fafafa", "secondary-text-color": "#aaa",
+    "primary-background-color": "#151515", "card-background-color": "#242424",
+    "secondary-background-color": "#303030", "divider-color": "#555" };
+  for (const [name, value] of Object.entries(tokens)) document.body.style.setProperty("--" + name, value);
+}
+let state = JSON.parse(sessionStorage.getItem("test-state") || '{"revision":0,"changes":[],"issues":[]}');
+const commits = [];
+window.requests = [];
+const persist = () => sessionStorage.setItem("test-state", JSON.stringify(state));
+const opKey = (op) => [op.kind, op.object_id, op.field].join("/");
+document.querySelector("rozvodna-panel").hass = {
+  language: "sk", user: { is_admin: !params.has("nonadmin"), id: "test-user" },
+  async callWS(msg) {
+    window.requests.push(msg);
+    let result;
+    switch (msg.type) {
+      case "rozvodna/snapshot": result = data; break;
+      case "rozvodna/state": result = state; break;
+      case "rozvodna/stage": {
+        const changes = new Map(state.changes.map((op) => [opKey(op), op]));
+        for (const op of msg.drop || []) changes.delete(opKey(op));
+        for (const op of msg.changes) {
+          if (JSON.stringify(op.before) === JSON.stringify(op.after)) changes.delete(opKey(op));
+          else changes.set(opKey(op), op);
+        }
+        state = { revision: state.revision + 1, changes: [...changes.values()], issues: [] };
+        persist();
+        result = state;
+        break;
+      }
+      case "rozvodna/commit": {
+        const operations = state.changes.map((op, position) => {
+          const row = [...data.devices, ...data.entities].find((item) => item.id === op.object_id);
+          row.values[op.field] = op.after;
+          return { ...op, position, title: row.title, integration: row.integration, status: "saved" };
+        });
+        result = { id: "test-commit", status: "saved", operations, user_id: "test-user", created: new Date().toISOString() };
+        commits.push(result);
+        state = { revision: state.revision + 1, changes: [], issues: [] };
+        persist();
+        break;
+      }
+      case "rozvodna/history": result = commits.map((item) => ({ ...item, count: item.operations.length })); break;
+      case "rozvodna/detail": result = commits[0]; break;
+      case "rozvodna/revert":
+        state = { revision: state.revision + 1, issues: [], changes: commits[0].operations
+          .filter((op) => !msg.positions || msg.positions.includes(op.position))
+          .map((op) => ({ ...op, before: op.after, after: op.before })) };
+        persist();
+        result = state;
+        break;
+      default: throw new Error(msg.type);
+    }
+    return structuredClone(result);
+  },
+};
+</script></html>

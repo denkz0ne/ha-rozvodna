@@ -1,0 +1,6 @@
+{
+  "config": {
+    "step": {"user": {"title": "Rozvodňa", "description": "Pridať administračný panel pre zariadenia a entity."}},
+    "abort": {"already_configured": "Rozvodňa je už nastavená.", "single_instance_allowed": "Rozvodňa je už nastavená."}
+  }
+}
