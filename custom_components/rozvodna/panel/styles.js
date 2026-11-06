@@ -76,18 +76,16 @@ thead th { text-align: start; position: sticky; top: 0; z-index: 1; background: 
 th, td { padding: 0 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 td { height: var(--data-table-row-height, 52px); }
 th[scope=row] { text-align: start; font-weight: var(--ha-font-weight-medium, 500); }
-tbody tr:hover { background: var(--row-hover); }
 tr[aria-selected=true] { background: var(--selected-surface); }
 tr.group, tr.nested { background: var(--group-surface); }
-tr.nested:hover { background: color-mix(in srgb, var(--primary-text-color, #212121) 4%, var(--group-surface)); }
 tr.nested[aria-selected=true] { background: var(--selected-surface); }
 tr.nested td { height: 40px; }
 tr.nested .object { padding-inline-start: 26px; }
 td.object { min-width: 218px; max-width: 340px; }
-td.object .object-content { display: flex; align-items: center; gap: 2px; width: 100%; min-width: 0; }
+td.object .object-content { display: flex; align-items: center; gap: 2px; width: 100%; min-width: 0; position: relative; }
 td.object .object-name { width: auto; min-width: 0; flex: 1; min-height: 34px; justify-content: flex-start;
   text-align: start; border-color: transparent; background: transparent; padding: 2px 5px; border-radius: var(--control-radius); }
-td.object .object-name:hover:not(:disabled) { background: var(--row-hover); }
+td.object .object-name:hover:not(:disabled) { border-color: var(--outline); background: transparent; }
 td.object .object-name.dirty { border-color: var(--warning-color, #e88713); }
 td.object .object-name.staged { border-color: var(--success-color, #388e3c); }
 td.object .object-icon { width: 24px; min-width: 24px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: transparent; }
@@ -96,7 +94,7 @@ td.object .object-icon:hover:not(:disabled) { background: var(--row-hover); }
 .object-text span, .object-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .object-meta { margin-top: 2px; color: var(--muted); font-size: var(--ha-font-size-s, 12px); }
 .entity-status { display: inline-flex; align-items: center; justify-content: center; width: 22px; min-width: 22px;
-  color: var(--muted); cursor: help; }
+  position: absolute; inset-inline-start: -22px; top: 50%; transform: translateY(-50%); color: var(--muted); cursor: help; }
 .entity-status ha-icon { --mdc-icon-size: 18px; }
 .entity-status.status-unavailable { color: var(--error-color, #db4437); }
 .entity-status.status-disabled, .entity-status.status-hidden { color: var(--warning-color, #e88713); }
