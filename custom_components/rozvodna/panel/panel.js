@@ -5,6 +5,7 @@ import { button, esc, icon } from "./html.js";
 import { filters, toolbar } from "./toolbar.js";
 import { language } from "./strings.js";
 import styles from "./styles.js";
+import { openReplacer } from "./replacer.js";
 import { referencePaths } from "./references.js";
 
 const EVENTS = ["device_registry_updated", "entity_registry_updated", "area_registry_updated", "label_registry_updated"];
@@ -528,6 +529,7 @@ class RozvodnaPanel extends HTMLElement {
     if (closePicker) return;
     switch (action) {
       case "edit": startEdit(this, row, field); break;
+      case "replace-device": openReplacer(this, row); break;
       case "entity-icon":
         this.dispatchEvent(new CustomEvent("hass-more-info", { bubbles: true, composed: true,
           detail: { entityId: row.values.entity_id } }));

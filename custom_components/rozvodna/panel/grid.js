@@ -29,6 +29,7 @@ export function grid(panel) {
       data-object-id="${esc(row.id)}" aria-selected="${checked}"><td class="toggle">${check}${toggle}</td>
       ${fields.map((field) => cell(panel, row, field, editable)).join("")}<td class="actions">
       ${button("stage", icon("check"), `class="icon-button" aria-label="${t.stage}" title="${t.stage}" ${editable && isDirty(panel, row) ? "" : "disabled"}`)}
+      ${row.kind === "device" && editable ? button("replace-device", icon("swap-horizontal"), `class="icon-button" aria-label="${t.replace_device}" title="${t.replace_device}"`) : ""}
       ${button("object-history", icon("history"), `class="icon-button" aria-label="${t.by_object}" title="${t.by_object}"`)}</td></tr>`;
   });
   if (!rows.length) rows.push(`<tr><td colspan="9">${t.empty_rows}</td></tr>`);

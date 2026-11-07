@@ -73,6 +73,8 @@ async def smoke(folder):
                                                    identifiers={("rozvodna", "child")}, name="Child")
         entity = entities.async_get_or_create("sensor", "rozvodna", "test-entity", config_entry=entry,
                                               device_id=child.id, original_name="Test", has_entity_name=True)
+        replacement = entities.async_get_or_create("sensor", "rozvodna", "replacement", config_entry=entry,
+                                                   device_id=device.id, original_name="Test", has_entity_name=True)
         area = ar.async_get(hass).async_create("Test Area", icon="mdi:door")
         label = lr.async_get(hass).async_create("Test Label", icon="mdi:tag", color="#00bcd4")
         admin = await token(hass, "Admin", GROUP_ID_ADMIN)
@@ -89,6 +91,10 @@ async def smoke(folder):
                 module = panel["config"]["_panel_custom"]["module_url"]
                 async with session.get(url + module) as response:
                     assert response.status == 200 and "class RozvodnaPanel" in await response.text()
+                plan = await ws("rozvodna/replacement_preview", old=child.id, new=device.id,
+                                mapping={entity.entity_id: replacement.entity_id})
+                assert plan["pairs"][0]["target"] == replacement.entity_id, plan
+                assert entities.async_get(entity.entity_id).id == entity.id
                 snapshot = await ws("rozvodna/snapshot")
                 children = [row for row in snapshot["devices"] if row["id"] == child.id]
                 assert children and children[0]["parent_device_id"] == device.id, snapshot

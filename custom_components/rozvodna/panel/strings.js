@@ -1,4 +1,5 @@
 const sk = {
+  replace_device: "Nahradiť zariadenie",
   filters: "Filtre", sort: "Zoradenie", integrations: "Integrácie", status: "Stav", find: "Hľadať", find_integration: "Hľadať integráciu",
   selected: "Vybrané", clear_selection: "Zrušiť výber",
   entity_count: (count) => count + (count === 1 ? " entita" : count >= 2 && count <= 4 ? " entity" : " entít"),
@@ -77,6 +78,7 @@ const sk = {
   enabled_note: "Povolenie entity sa môže prejaviť po opätovnom načítaní integrácie alebo po reštarte HA.",
 };
 const en = {
+  replace_device: "Replace device",
   filters: "Filters", sort: "Sort order", integrations: "Integrations", status: "Status", find: "Search", find_integration: "Search integrations",
   selected: "Selected", clear_selection: "Clear selection",
   entity_count: (count) => count + (count === 1 ? " entity" : " entities"),

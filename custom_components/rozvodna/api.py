@@ -18,6 +18,8 @@ REVISION = {p.Required("revision"): p.All(int, p.Range(min=0))}
 def register_commands(hass):
     commands = {
         "snapshot": ({}, snapshot),
+        "replacement_preview": ({p.Required("old"): str, p.Required("new"): str,
+                                 p.Required("mapping"): {str: p.Any(None, str)}}, replacement_preview),
         "state": ({}, state),
         "stage": ({**REVISION, p.Required("changes"): [CHANGE], p.Optional("drop"): [KEY]}, stage),
         "commit": ({**REVISION, p.Optional("message"): p.All(str, p.Length(max=255)),
@@ -57,6 +59,14 @@ def _register(hass, name, schema, handler):
 
 async def snapshot(engine, user, msg, hass):
     return engine.registry.snapshot()
+
+
+async def replacement_preview(engine, user, msg, hass):
+    from .replacer import preview
+
+    async with engine.lock:
+        engine._check_active()
+        return await preview(engine.registry, engine.references, msg["old"], msg["new"], msg["mapping"])
 
 
 async def state(engine, user, msg, hass):
