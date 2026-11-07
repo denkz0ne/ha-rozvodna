@@ -75,6 +75,7 @@ async def smoke(folder):
                                               device_id=child.id, original_name="Test", has_entity_name=True)
         replacement = entities.async_get_or_create("sensor", "rozvodna", "replacement", config_entry=entry,
                                                    device_id=device.id, original_name="Test", has_entity_name=True)
+        entities.async_update_entity(entity.entity_id, name="Original custom name")
         area = ar.async_get(hass).async_create("Test Area", icon="mdi:door")
         label = lr.async_get(hass).async_create("Test Label", icon="mdi:tag", color="#00bcd4")
         admin = await token(hass, "Admin", GROUP_ID_ADMIN)
@@ -94,6 +95,12 @@ async def smoke(folder):
                 plan = await ws("rozvodna/replacement_preview", old=child.id, new=device.id,
                                 mapping={entity.entity_id: replacement.entity_id})
                 assert plan["pairs"][0]["target"] == replacement.entity_id, plan
+                changes = [{key: value for key, value in item.items() if key != "title"}
+                           for item in plan["settings"]]
+                assert {"kind": "entity", "object_id": replacement.id, "field": "name",
+                        "before": None, "after": "Original custom name"} in changes, changes
+                assert entities.async_get(replacement.id).name is None
+                entities.async_update_entity(entity.entity_id, name=None)
                 assert entities.async_get(entity.entity_id).id == entity.id
                 snapshot = await ws("rozvodna/snapshot")
                 children = [row for row in snapshot["devices"] if row["id"] == child.id]

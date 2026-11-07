@@ -53,6 +53,34 @@ export function openReplacer(panel, source) {
           <ul class="reference-list">${plan.references.map((item) =>
             `<li>${esc(item.source)} · ${esc(item.location)}<small>${esc(item.old)} → ${esc(item.new)}</small></li>`).join("")}</ul>`);
       }
+      if (plan.settings.length) {
+        const settings = plan.settings.map(({ title, ...change }) => change);
+        result.insertAdjacentHTML("beforeend", `<h3>${t("Prenos nastavení", "Copy settings")}</h3>
+          <ul class="reference-list">${plan.settings.map((item) =>
+            `<li>${esc(item.title)} · ${esc(panel.t[item.field] ?? item.field)}
+            <small>${esc(JSON.stringify(item.before))} → ${esc(JSON.stringify(item.after))}</small></li>`).join("")}</ul>
+          <button type="button" data-stage-settings>${t("Pripraviť prenos nastavení", "Stage settings transfer")}</button>`);
+        const stage = result.querySelector("[data-stage-settings]");
+        stage.addEventListener("click", async () => {
+          stage.disabled = true;
+          picker.disabled = true;
+          try {
+            if (panel.workspace.changes.length || panel.working.size) {
+              throw new Error(t("Najprv dokonči rozpracované zmeny v registri.", "Finish the pending registry edits first."));
+            }
+            panel.setWorkspace(await panel.ws("stage", { revision: panel.workspace.revision, changes: settings }));
+            dialog.close();
+            panel.render();
+          } catch (error) {
+            const message = document.createElement("p");
+            message.setAttribute("role", "alert");
+            message.textContent = error.message || panel.t.error;
+            stage.after(message);
+            stage.disabled = false;
+            picker.disabled = false;
+          }
+        });
+      }
       if (plan.unmatched_new.length) {
         result.insertAdjacentHTML("beforeend", `<h3>${t("Nové entity bez dvojice", "Unmatched new entities")}</h3>
           <ul class="reference-list">${plan.unmatched_new.map((id) => `<li>${esc(id)}</li>`).join("")}</ul>`);

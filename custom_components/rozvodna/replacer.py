@@ -51,6 +51,25 @@ async def preview(registry, references, old_id, new_id, overrides):
         rows.append({"source": entry.entity_id, "target": mapping[entry.entity_id],
                      "uncertain": entry.entity_id in uncertain and entry.entity_id not in overrides,
                      "differences": differences})
+    settings = []
+    def copy_settings(source, target, fields):
+        for field in fields:
+            before_value, after_value = target["values"][field], source["values"][field]
+            if before_value == after_value:
+                continue
+            if field in ("hidden_by", "disabled_by") and (
+                before_value not in (None, "user") or after_value not in (None, "user")
+            ):
+                continue
+            settings.append({"kind": target["kind"], "object_id": target["id"], "field": field,
+                             "before": before_value, "after": after_value, "title": target["title"]})
+
+    copy_settings(old, new, ("name", "area_id", "labels"))
+    for entry in before:
+        if (target := new_ids.get(mapping[entry.entity_id])) is not None:
+            copy_settings(registry.target("entity", entry.id), registry.target("entity", target.id),
+                          ("name", "area_id", "labels", "icon", "hidden_by", "disabled_by"))
+
     renames = [Operation("entity", new_ids[target].id, "entity_id", target, source)
                for source, target in mapping.items() if target is not None]
     try:
@@ -63,4 +82,4 @@ async def preview(registry, references, old_id, new_id, overrides):
         raise Problem(str(error)) from error
     return {"old": old, "new": new, "pairs": rows, "unmatched_new": sorted(new_ids.keys() - set(targets)),
             "references": report["matches"] + device_report["matches"],
-            "coverage": report["coverage"]}
+            "coverage": report["coverage"], "settings": settings}
