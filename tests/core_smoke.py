@@ -139,6 +139,18 @@ async def smoke(folder):
                 assert undone["status"] == "saved", undone
                 assert entities.async_get(entity.id).entity_id == entity.entity_id
                 assert entities.async_get(entity.id).name is None
+                replace_args = dict(old=child.id, new=device.id,
+                                    mapping={entity.entity_id: replacement.entity_id})
+                plan = await ws("rozvodna/replacement_preview", **replace_args)
+                stale = await ws("rozvodna/replacement_execute", success=False, **replace_args,
+                                 token="stale", reference_ids=[])
+                assert stale["code"] == "reference_conflict", stale
+                assert entities.async_get(entity.id) is not None
+                replaced = await ws("rozvodna/replacement_execute", **replace_args,
+                                    token=plan["token"], reference_ids=[])
+                assert replaced["status"] == "saved", replaced
+                assert entities.async_get(entity.id) is None
+                assert entities.async_get(replacement.id).entity_id == entity.entity_id
                 await hass.config_entries.async_remove(entry.entry_id)
                 assert "rozvodna" not in await ws("get_panels")
                 assert (await ws("rozvodna/snapshot", success=False))["code"] == "inactive"

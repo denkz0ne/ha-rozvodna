@@ -53,6 +53,37 @@ export function openReplacer(panel, source) {
           <ul class="reference-list">${plan.references.map((item) =>
             `<li>${esc(item.source)} · ${esc(item.location)}<small>${esc(item.old)} → ${esc(item.new)}</small></li>`).join("")}</ul>`);
       }
+      if (plan.pairs.some((pair) => pair.target)) {
+        const automatic = plan.references.filter((item) => item.automatic && item.reference_kind === "entity");
+        result.insertAdjacentHTML("beforeend", `<h3>${t("Potvrdenie výmeny", "Confirm replacement")}</h3>
+          <p>${t("Staré záznamy entít sa odstránia a ich ID prevezmú nové entity. Odkazy na zariadenie skontroluj ručne.", "Old entity entries are removed so the new entities can take over their IDs. Review device references manually.")}</p>
+          ${automatic.map((item) => `<label class="reference-match"><input type="checkbox" value="${esc(item.id)}" data-replacement-reference checked>
+            <span>${esc(item.source)} · ${esc(item.location)}</span></label>`).join("")}
+          <label class="reference-match"><input type="checkbox" data-replacement-confirm>
+            <span>${t("Potvrdzujem odstránenie starých záznamov. Návrat tejto výmeny ešte nie je dostupný.", "I confirm removal of the old entries. Undo for this replacement is not yet available.")}</span></label>
+          <button type="button" class="primary" data-replacement-apply disabled>${t("Vykonať výmenu", "Apply replacement")}</button>`);
+        const confirm = result.querySelector("[data-replacement-confirm]");
+        const apply = result.querySelector("[data-replacement-apply]");
+        confirm.addEventListener("change", () => { apply.disabled = !confirm.checked; });
+        apply.addEventListener("click", async () => {
+          if (panel.working.size || panel.workspace.changes.length) {
+            apply.after(document.createTextNode(t("Najprv dokonči úpravy v registri.", "Finish registry edits first.")));
+            return;
+          }
+          apply.disabled = true;
+          picker.disabled = true;
+          const referenceIds = [...result.querySelectorAll("[data-replacement-reference]:checked")].map((input) => input.value);
+          const reviewedMapping = { ...mapping };
+          dialog.close();
+          await panel.run(async () => {
+            const commit = await panel.ws("replacement_execute", {
+              old: source.id, new: target, mapping: reviewedMapping, token: plan.token, reference_ids: referenceIds,
+            });
+            await panel.load();
+            panel.notice(commit.status, commit.status !== "saved");
+          });
+        });
+      }
       if (plan.settings.length) {
         const settings = plan.settings.map(({ title, ...change }) => change);
         result.insertAdjacentHTML("beforeend", `<h3>${t("Prenos nastavení", "Copy settings")}</h3>

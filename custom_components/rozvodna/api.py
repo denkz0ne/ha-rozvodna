@@ -20,6 +20,9 @@ def register_commands(hass):
         "snapshot": ({}, snapshot),
         "replacement_preview": ({p.Required("old"): str, p.Required("new"): str,
                                  p.Required("mapping"): {str: p.Any(None, str)}}, replacement_preview),
+        "replacement_execute": ({p.Required("old"): str, p.Required("new"): str,
+                                 p.Required("mapping"): {str: p.Any(None, str)},
+                                 p.Required("token"): str, p.Required("reference_ids"): [str]}, replacement_execute),
         "state": ({}, state),
         "stage": ({**REVISION, p.Required("changes"): [CHANGE], p.Optional("drop"): [KEY]}, stage),
         "commit": ({**REVISION, p.Optional("message"): p.All(str, p.Length(max=255)),
@@ -67,6 +70,15 @@ async def replacement_preview(engine, user, msg, hass):
     async with engine.lock:
         engine._check_active()
         return await preview(engine.registry, engine.references, msg["old"], msg["new"], msg["mapping"])
+
+
+async def replacement_execute(engine, user, msg, hass):
+    from .replacer import execute
+
+    task = hass.async_create_task(execute(
+        engine, user, msg["old"], msg["new"], msg["mapping"], msg["token"], msg["reference_ids"],
+    ), "Rozvodňa device replacement")
+    return await asyncio.shield(task)
 
 
 async def state(engine, user, msg, hass):

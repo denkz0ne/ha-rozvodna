@@ -1,4 +1,8 @@
-"""Build a read-only device replacement plan."""
+"""Plan and journal the transfer of registered device entities."""
+
+import asyncio
+from hashlib import sha256
+import json
 
 from homeassistant.helpers import entity_registry as er
 
@@ -80,6 +84,95 @@ async def preview(registry, references, old_id, new_id, overrides):
         )
     except ReferenceLimit as error:
         raise Problem(str(error)) from error
-    return {"old": old, "new": new, "pairs": rows, "unmatched_new": sorted(new_ids.keys() - set(targets)),
-            "references": report["matches"] + device_report["matches"],
+    result = {"old": old, "new": new, "pairs": rows, "unmatched_new": sorted(new_ids.keys() - set(targets)),
+            "references": [{**item, "reference_kind": "entity"} for item in report["matches"]] + [{**item, "reference_kind": "device"} for item in device_report["matches"]],
             "coverage": report["coverage"], "settings": settings}
+
+    result["token"] = sha256(json.dumps(
+        [result, report["token"], device_report["token"],
+         [(entry.id, entry.entity_id) for entry in before + after]], sort_keys=True
+    ).encode()).hexdigest()
+    return result
+
+async def execute(engine, user, old_id, new_id, overrides, expected_token, selected):
+    """Transfer IDs and apply reviewed settings using the registry journal."""
+    async with engine.lock:
+        engine._check_active()
+        workspace = await engine.execute(engine.db.state, user)
+        if workspace["changes"]:
+            raise Problem("replacement_pending_changes")
+        registry = engine.registry
+        report = await preview(registry, engine.references, old_id, new_id, overrides)
+        if report["token"] != expected_token:
+            raise Problem("reference_conflict")
+        pairs = [item for item in report["pairs"] if item["target"]]
+        if not pairs or any(item["uncertain"] for item in pairs):
+            raise Problem("replacement_review_required")
+        plan = []
+        for item in pairs:
+            old = registry.entities.async_get(item["source"])
+            new = registry.entities.async_get(item["target"])
+            state = registry.hass.states.get(old.entity_id)
+            if state is not None and state.state != "unavailable" and not state.attributes.get("restored"):
+                raise Problem("replacement_source_active")
+            if any(diff["field"] in ("unit_of_measurement", "state_class", "device_class")
+                   for diff in item["differences"]):
+                raise Problem("replacement_incompatible")
+            identity = {"entity_id": old.entity_id, "platform": old.platform, "unique_id": old.unique_id,
+                        "config_entry_id": old.config_entry_id, "config_subentry_id": old.config_subentry_id,
+                        "device_id": old.device_id}
+            plan.extend([
+                (Operation("entity", old.id, "replacement_release", identity, None), old.entity_id, old.platform),
+                (Operation("entity", new.id, "entity_id", new.entity_id, old.entity_id), new.entity_id, new.platform),
+            ])
+        for item in report["settings"]:
+            op = Operation(item["kind"], item["object_id"], item["field"], item["before"], item["after"])
+            row = engine._check(op)
+            plan.append((op, row["title"], row["integration"]))
+        eligible = {item["id"]: item for item in report["references"]
+                    if item["automatic"] and item["reference_kind"] == "entity"}
+        if not set(selected).issubset(eligible):
+            raise Problem("reference_selection_invalid")
+        # The entity scan precedes the device scan, which leaves the same dashboard snapshots cached.
+        for match_id in dict.fromkeys(selected):
+            item = eligible[match_id]
+            op = Operation("reference", item["source_id"], item["location"], item["old"], item["new"])
+            row = engine._check(op)
+            plan.append((op, row["title"], row["integration"]))
+        commit_id = await engine.execute(engine.db.begin, user, "Replace device", plan)
+        saved = 0
+        failed = False
+        for position, (op, _, _) in enumerate(plan):
+            if failed:
+                await engine.execute(engine.db.outcome, commit_id, position, "skipped", "replacement_stopped")
+                continue
+            await engine.execute(engine.db.applying, commit_id, position)
+            if op.field == "replacement_release":
+                current = registry.entities.async_get(op.object_id)
+                state = registry.hass.states.get(op.before["entity_id"])
+                if (current is None or current.entity_id != op.before["entity_id"]
+                        or (state is not None and state.state != "unavailable"
+                            and not state.attributes.get("restored"))):
+                    status, error = "conflict", "changed"
+                else:
+                    try:
+                        registry.entities.async_remove(current.entity_id)
+                        status, error = ("saved", None) if registry.entities.async_get(op.object_id) is None else (
+                            "error", "unexpected_value"
+                        )
+                    except Exception:
+                        status, error = "uncertain", "registry_error"
+            else:
+                if op.field == "entity_id":
+                    # Registry listeners remove the old state asynchronously.
+                    for _ in range(20):
+                        if not registry.occupied(op.after):
+                            break
+                        await asyncio.sleep(0.05)
+                status, error = await engine._apply(op)
+            await engine.execute(engine.db.outcome, commit_id, position, status, error)
+            failed = status != "saved"
+            saved += status == "saved"
+        status = "partial" if failed and saved else "error" if failed else "saved"
+        await engine.execute(engine.db.finish, commit_id, status, user, workspace["revision"] + 1, [])
+        return await engine.execute(engine.db.detail, commit_id)

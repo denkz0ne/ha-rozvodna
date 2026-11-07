@@ -277,6 +277,8 @@ class Engine:
                           and (positions is None or op["position"] in positions)]
             if not operations or (positions is not None and {op["position"] for op in operations} != set(positions)):
                 raise Problem("empty_revert")
+            if any(item["field"] == "replacement_release" for item in detail["operations"]):
+                raise Problem("replacement_recovery_required")
             linked = {op["position"] for op in detail["operations"]
                       if op["status"] == "saved" and (op["field"] == "entity_id" or op["kind"] == "reference")}
             selected_linked = {op["position"] for op in operations} & linked
