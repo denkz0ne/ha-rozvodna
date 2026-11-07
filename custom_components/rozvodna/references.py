@@ -54,7 +54,7 @@ class References:
 
         return sources, yaml_dashboards, unavailable_dashboards
 
-    async def inspect(self, renames):
+    async def inspect(self, renames, *, reference_keys=REFERENCE_KEYS):
         """Return safe candidates and a content token without exposing config."""
         if len(renames) > MAX_REFERENCE_RENAMES:
             raise ReferenceLimit("too_many_reference_renames")
@@ -65,7 +65,7 @@ class References:
         rename_key = sorted((op.object_id, op.before, op.after) for op in renames)
         for old_id, new_id in sorted({(op.before, op.after) for op in renames}):
             for source in sources.values():
-                for path, category in find_references(source["config"], old_id):
+                for path, category in find_references(source["config"], old_id, reference_keys):
                     automatic = source["automatic"] and category == "static"
                     match_id = hashlib.sha256(
                         f"{source['id']}\0{path}\0{old_id}\0{new_id}".encode()
@@ -145,7 +145,7 @@ class References:
         self.fingerprints[op.object_id] = fingerprint(saved)
 
 
-def find_references(config, entity_id):
+def find_references(config, entity_id, reference_keys=REFERENCE_KEYS):
     """Find exact entity selector values and templated strings, with JSON paths."""
     found = []
 
@@ -158,7 +158,7 @@ def find_references(config, entity_id):
             for index, child in enumerate(value):
                 visit(child, f"{path}/{index}", key, custom)
         elif isinstance(value, str):
-            if key in REFERENCE_KEYS and value == entity_id:
+            if key in reference_keys and value == entity_id:
                 found.append((path or "/", "ambiguous" if custom else "static"))
             elif entity_id in value and any(marker in value for marker in TEMPLATE_MARKERS):
                 found.append((path or "/", "dynamic"))

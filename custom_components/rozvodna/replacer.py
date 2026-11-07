@@ -54,8 +54,13 @@ async def preview(registry, references, old_id, new_id, overrides):
     renames = [Operation("entity", new_ids[target].id, "entity_id", target, source)
                for source, target in mapping.items() if target is not None]
     try:
-        report = await references.inspect(renames) if renames else {"matches": [], "coverage": {}}
+        report = await references.inspect(renames)
+        device_report = await references.inspect(
+            [Operation("device", old_id, "device_id", old_id, new_id)],
+            reference_keys={"device_id", "device_ids"},
+        )
     except ReferenceLimit as error:
         raise Problem(str(error)) from error
     return {"old": old, "new": new, "pairs": rows, "unmatched_new": sorted(new_ids.keys() - set(targets)),
-            "references": report["matches"], "coverage": report["coverage"]}
+            "references": report["matches"] + device_report["matches"],
+            "coverage": report["coverage"]}
